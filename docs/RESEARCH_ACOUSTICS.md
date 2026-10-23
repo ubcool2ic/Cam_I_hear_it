@@ -164,7 +164,7 @@ The website shows a top-down outline of the car (nose up) with a **ring of tappa
 
 **Side convention.** `side` is in the **vehicle frame**: LEFT/RIGHT as seen from the driver's seat facing forward. This is physical, so it stays tied to the exhaust bank and pipe (§2) regardless of market. The UI labels spots Driver/Passenger, and `driveSide` (`LHD` = driver on the left, `RHD` = driver on the right) maps between the two. The payload stores both `side` and `seatSide` (`DRIVER`/`PASSENGER`/`CENTER`).
 
-Payload (`cam-i-hear-it/upload@2`, `capture` block):
+Payload (`cam-i-hear-it/upload@3`, `capture` block; top-level `sampleId`, `consent {version, acceptedAt}` and `audio` metadata are described in web/README.md):
 
 ```json
 {
@@ -180,6 +180,7 @@ Payload (`cam-i-hear-it/upload@2`, `capture` block):
     "seatSide": "DRIVER",
     "tailpipe": "LEFT",
     "facing": { "target": "TAILPIPE_OUTLET", "bearingDeg": 18 },
+    "distanceTo": "PIPE_OUTLET",
     "distanceBand": "MID",
     "distanceRangeM": [0.3, 1],
     "heightBand": "LOW",
@@ -198,7 +199,7 @@ Payload (`cam-i-hear-it/upload@2`, `capture` block):
 }
 ```
 
-`facing.bearingDeg` is the direction the user faces, in the vehicle frame: 0° = toward the nose, 90° = toward vehicle RIGHT. It is null for the engine bay, where the user looks down. `tailpipe` is the outlet the user stands at: `LEFT`, `RIGHT`, `CENTER`, or `DUAL` (standing between two outlets). All environment fields are optional (null = not given). Lengths are always in SI. `distanceRangeM`/`heightRangeM` give the band as `[min, max]` metres (`null` max = open-ended). `display_units` (`metric`/`imperial`) only records which units the user saw; it does not change any value. These fields are additive, so the schema stays `upload@2`.
+`facing.bearingDeg` is the direction the user faces, in the vehicle frame: 0° = toward the nose, 90° = toward vehicle RIGHT. It is null for the engine bay, where the user looks down. `tailpipe` is the outlet the user stands at: `LEFT`, `RIGHT`, `CENTER`, or `DUAL` (standing between two outlets). All environment fields are optional (null = not given). Lengths are always in SI. `distanceRangeM`/`heightRangeM` give the band as `[min, max]` metres (`null` max = open-ended). `display_units` (`metric`/`imperial`) only records which units the user saw; it does not change any value. `display_units` and the `*RangeM` fields were additive (still `upload@2`). `upload@3` changed the distance bands (below, §10.2), which is not additive.
 
 **10.1 What each exterior position is good and bad for.** This is our synthesis of §4, §7 and §9.2–9.5 and should be validated with Tyler's labelled clips.
 
@@ -211,12 +212,12 @@ Payload (`cam-i-hear-it/upload@2`, `capture` block):
 | `LEFT_FRONT_DOOR` / `RIGHT_FRONT_DOOR` | Behind the front wheel: downpipe, rear of that bank | Fender and front wheel partly shadow the bay | That bank's downpipe/collector leaks; bank comparison | Firing-pulse timing (weaker than tailpipe), timbre comparisons with other spots |
 | `FRONT_LEFT_CORNER` / `FRONT_RIGHT_CORNER` | That bank's manifold and lower block (front wheel well, §9.5) | Bumper and wheel shield the top of the engine; the far bank is shadowed by the block | **Manifold leaks per bank, L/R bank comparison** (recommended optional step) | RPM if the hood is closed and fan is loud |
 | `FRONT_CENTER` (grille) | Fan, belts, front of block | Hood (if closed) shields the top; fan noise masks | Quick screen, belt/pulley noise | Exhaust timing and lope; detailed fault work (§9.5: screening only) |
-| `ENGINE_BAY` (hood open, 20–40 cm, not on the ring) | Valve covers, intake, injectors (closest to the engine) | Direct, near field (§9.3) | **Lifter/valvetrain tick, intake, injector tick**, manifold-to-head leak | Repeatable timbre (small moves change spectrum, §9.3); exhaust lope |
+| `ENGINE_BAY` (hood open, 20–30 cm, not on the ring) | Valve covers, intake, injectors (closest to the engine) | Direct, near field (§9.3) | **Lifter/valvetrain tick, intake, injector tick**, manifold-to-head leak | Repeatable timbre (small moves change spectrum, §9.3); exhaust lope |
 
 The phone's own body also shadows high frequencies (§7). `phoneOrientation` = `MIC_TOWARD_SOURCE` remains the default, and `facing` lets us check that the user faced the source the position implies.
 
-**10.2 Bands kept from the earlier scheme.**
-- **Distance** (to the nearest surface of the source): `NEAR` ≤ 0.3 m (§9.3 near field), `MID` 0.3–1 m (tailpipe 0.5 m), `FAR` 1–3 m, `VERY_FAR` > 3 m (reflections and ambient dominate, §9.2/9.4).
+**10.2 Bands.**
+- **Distance** (`upload@3`): phone mic to the car at the chosen spot. `distanceTo` says what it is measured to: `PIPE_OUTLET` at the tailpipe spot, `ENGINE` at the engine bay, otherwise `BODY_PANEL` (nearest body panel). Bands: `TOUCHING` < 0.15 m, `CLOSE` 0.15–0.3 m (§9.3 near field), `MID` 0.3–1 m, `FAR` 1–3 m, `VERY_FAR` > 3 m (reflections and ambient dominate, §9.2/9.4). Shown as < 6 in, 6–12 in, 1–3 ft, 3–10 ft, > 10 ft in imperial. The guide recommends a distance per step (tailpipe 0.5 m, engine bay 0.2–0.3 m, front corners ~0.3 m) and preselects the band that contains it. `upload@2` used `NEAR` ≤ 0.3 m / `MID` / `FAR` / `VERY_FAR`, measured to "the source"; map old `NEAR` to `TOUCHING` or `CLOSE` only with care.
 - **Height:** `GROUND`, `LOW` < 0.5 m, `MID` 0.5–1.2 m, `HIGH` > 1.2 m. Height sets the ground-reflection comb (§9.4).
 - **Hood:** `OPEN`, `CLOSED`, `NA`. Choosing the engine-bay spot sets `OPEN`.
 - **Phone orientation:** `MIC_TOWARD_SOURCE` (default), `MIC_AWAY`, `FLAT_FACE_UP`, `UNKNOWN`.

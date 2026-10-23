@@ -1,7 +1,8 @@
 /**
  * @file web/capture-guide.js
  * @summary Step-by-step guided capture workflow for idle engine acoustic recordings with microphone orientation illustration.
- * Shown lengths follow the metric/imperial display setting (web/units.js).
+ * Shown lengths follow the metric/imperial display setting (web/units.js). Each step carries the recommended
+ * mic-to-car distance in metres (`preset.distanceM`); app.js preselects the distance band that contains it.
  */
 
 import { formatLengths } from "./units.js";
@@ -10,8 +11,9 @@ import { formatLengths } from "./units.js";
  * Guided capture steps (docs/RESEARCH_ACOUSTICS.md §9.8). Each step *recommends* a position; its `preset` is applied to
  * the picker and form when the step is entered, but the user can then tap any ring position and that choice is what
  * gets saved. Lengths in `instructions` are metre tokens (`{0.5}`, `{0.2-0.4}`) rendered in the user's display units
- * by web/units.js. `preset.position` is a picker id; `preset.tailpipe: "DRIVER"` is resolved to LEFT/RIGHT by app.js
- * from the LHD/RHD setting. A null preset leaves everything as the user set it.
+ * by web/units.js, in both `instructions` and `recommended`. `preset.position` is a picker id; `preset.tailpipe: "DRIVER"` is resolved to LEFT/RIGHT by app.js
+ * from the LHD/RHD setting. `preset.distanceM` is the recommended distance from the pipe outlet / engine, as
+ * [min, max] metres; app.js picks the distance band containing it. Preset keys that are absent are left as the user set them.
  * @type {Array<{id:string,title:string,badge:string,instructions:string,recommended:string,preset:object|null,showPhone:boolean}>}
  */
 export const GUIDE_STEPS = [
@@ -19,18 +21,18 @@ export const GUIDE_STEPS = [
     id: "step-tailpipe",
     title: "1. Tailpipe",
     badge: "Step 1 of 3",
-    instructions: "Engine warm and idling. Stand behind the car and hold the phone about {0.5} from the outlet, 45&deg; off to the side, at pipe height, bottom edge (mic) toward the pipe. Hold still for ~30 s.",
-    recommended: "Tailpipe, driver-side pipe if dual, Mid distance, Low height",
-    preset: { position: "TAILPIPE", tailpipe: "DRIVER", distanceBand: "MID", heightBand: "LOW", phoneOrientation: "MIC_TOWARD_SOURCE" },
+    instructions: "Engine warm and idling. Stand behind the car and hold the phone about {0.5} from the pipe outlet, 45&deg; off to the side, at pipe height, bottom edge (mic) toward the pipe. Hold still for ~30 s.",
+    recommended: "Tailpipe (driver-side pipe if dual), about {0.5} from the outlet, Low height",
+    preset: { position: "TAILPIPE", tailpipe: "DRIVER", distanceM: [0.5, 0.5], heightBand: "LOW", phoneOrientation: "MIC_TOWARD_SOURCE" },
     showPhone: true,
   },
   {
     id: "step-engine-bay",
     title: "2. Engine bay (hood open)",
     badge: "Step 2 of 3",
-    instructions: "Open the hood. Stand at the front and hold the phone {0.2-0.4} above the valve covers / intake, mic end toward the engine. Keep clear of belts, the fan and hot manifolds. Hold still ~30 s.",
-    recommended: "Engine bay spot, hood Open, Near, Mid height",
-    preset: { position: "ENGINE_BAY", hood: "OPEN", distanceBand: "NEAR", heightBand: "MID", phoneOrientation: "MIC_TOWARD_SOURCE" },
+    instructions: "Open the hood. Stand at the front and hold the phone {0.2-0.3} above the valve covers / intake, mic end toward the engine. Keep clear of belts, the fan and hot manifolds. Hold still ~30 s.",
+    recommended: "Engine bay spot, hood Open, {0.2-0.3} from the engine, Mid height",
+    preset: { position: "ENGINE_BAY", hood: "OPEN", distanceM: [0.2, 0.3], heightBand: "MID", phoneOrientation: "MIC_TOWARD_SOURCE" },
     showPhone: true,
   },
   {
@@ -39,7 +41,8 @@ export const GUIDE_STEPS = [
     badge: "Step 3 of 3",
     instructions: "Extra clips help us separate the engine from the surroundings. Driver and passenger front corners (~{0.3} from the front wheel, 15 s each) compare the two banks. Any ring position is fine: tap where you actually stand.",
     recommended: "Front corners, or any spot on the ring",
-    preset: null,
+    // Distance only: the standing spot is left as the user picks it.
+    preset: { distanceM: [0.3, 0.3] },
     showPhone: false,
   },
 ];
@@ -94,7 +97,7 @@ export function createCaptureGuide(container, { onStep, units = "metric" } = {})
         <div class="guide-body">
           ${step.showPhone ? `<div class="guide-illustration" title="Point the bottom microphone at the engine sound source">${PHONE_SVG}</div>` : ""}
           <div class="guide-instructions">${formatLengths(step.instructions, displayUnits)}
-            <div class="guide-recommended"><strong>Recommended:</strong> ${step.recommended}. <span class="muted">Can&rsquo;t stand there? Tap any spot on the outline; we save what you pick.</span></div>
+            <div class="guide-recommended"><strong>Recommended:</strong> ${formatLengths(step.recommended, displayUnits)}. <span class="muted">Can&rsquo;t stand there? Tap any spot on the outline; we save what you pick.</span></div>
           </div>
         </div>
         <div class="guide-nav">
