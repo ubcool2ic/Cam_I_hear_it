@@ -5,6 +5,9 @@
 | What | Where |
 |---|---|
 | Acoustics research (cited): firing math, lope, knock, phone limits, distance/position, 360° zone scheme | [docs/RESEARCH_ACOUSTICS.md](RESEARCH_ACOUSTICS.md) |
+| DSP library (TypeScript): RPM, cylinder hypotheses, lope, features | [lib/](../lib/README.md) |
+| Capture website (static, iPhone-first). Run locally with `npx serve web` | [web/](../web/README.md) |
+| OpenRouter spend log for model-assisted coding | [docs/SPEND.md](SPEND.md) |
 
 ## 1. What sound can and can't tell us
 
