@@ -5,10 +5,6 @@
 | What | Where |
 |---|---|
 | Acoustics research (cited): firing math, lope, knock, phone limits, distance/position, 360° zone scheme | [docs/RESEARCH_ACOUSTICS.md](RESEARCH_ACOUSTICS.md) |
-| DSP library (TypeScript, browser + Node): RPM, cylinder hypotheses, lope score, features JSON | [lib/](../lib/README.md) |
-| Static capture page (mic, spectrogram, vehicle + mods form, payload) | [web/](../web/README.md) |
-| ML backend design (FastAPI, dataset schema, Macchina ground truth, models) | [docs/ML_BACKEND.md](ML_BACKEND.md) · [backend/](../backend/README.md) |
-| Multi-sensor hardware design | [docs/HARDWARE.md](HARDWARE.md) |
 
 ## 1. What sound can and can't tell us
 

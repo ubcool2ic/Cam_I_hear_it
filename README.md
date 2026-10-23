@@ -11,6 +11,6 @@ Listen to an idling vehicle and estimate as much as possible from sound alone:
 
 See [docs/PLAN.md](docs/PLAN.md) for the roadmap, feasibility notes, and the hardware vs. web decision.
 
-Docs and code: [research](docs/RESEARCH_ACOUSTICS.md) · [DSP lib](lib/README.md) · [capture page](web/README.md) · [ML backend design](docs/ML_BACKEND.md) · [hardware design](docs/HARDWARE.md)
+Docs: [research](docs/RESEARCH_ACOUSTICS.md). Early code drafts are parked on the `parked/early-code` branch until we start building.
 
 Status: research, DSP lib (tested on synthetic signals) and web capture page are in place. Real-vehicle and iPhone testing are pending (2026-10-22).
