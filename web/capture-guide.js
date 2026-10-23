@@ -4,45 +4,37 @@
  */
 
 /**
- * Guided capture steps (docs/RESEARCH_ACOUSTICS.md §9.8). Each step's `preset` (or null) is applied to the position
- * picker and selects by app.js via `onStep`. Presets use the §10 codes.
- * @type {Array<{id:string,title:string,badge:string,instructions:string,preset:object|null,showPhone:boolean}>}
+ * Guided capture steps (docs/RESEARCH_ACOUSTICS.md §9.8). Each step *recommends* a position; its `preset` is applied to
+ * the picker and form when the step is entered, but the user can then tap any ring position and that choice is what
+ * gets saved. `preset.position` is a picker id; `preset.tailpipe: "DRIVER"` is resolved to LEFT/RIGHT by app.js
+ * from the LHD/RHD setting. A null preset leaves everything as the user set it.
+ * @type {Array<{id:string,title:string,badge:string,instructions:string,recommended:string,preset:object|null,showPhone:boolean}>}
  */
 export const GUIDE_STEPS = [
   {
     id: "step-tailpipe",
-    title: "1. Tailpipe Capture",
+    title: "1. Tailpipe",
     badge: "Step 1 of 3",
-    instructions: "Engine warm and idling. Hold phone ~0.5 m from the exhaust outlet at 45° off-axis, level with pipe height. Point bottom edge (mic) directly toward the pipe. Hold steady for ~30 s (driver side if dual exhaust).",
-    preset: {
-      zone: "TAILPIPE_LEFT",
-      distanceBand: "MID",
-      heightBand: "LOW",
-      hood: "NA",
-      phoneOrientation: "MIC_TOWARD_SOURCE",
-    },
+    instructions: "Engine warm and idling. Stand behind the car and hold the phone about 0.5 m from the outlet, 45&deg; off to the side, at pipe height, bottom edge (mic) toward the pipe. Hold still for ~30 s.",
+    recommended: "Tailpipe, driver-side pipe if dual, Mid distance, Low height",
+    preset: { position: "TAILPIPE", tailpipe: "DRIVER", distanceBand: "MID", heightBand: "LOW", phoneOrientation: "MIC_TOWARD_SOURCE" },
     showPhone: true,
   },
   {
     id: "step-engine-bay",
-    title: "2. Engine Bay Capture",
+    title: "2. Engine bay (hood open)",
     badge: "Step 2 of 3",
-    instructions: "Hood fully open. Hold phone 20–40 cm above the center of the valve covers or intake manifold with the mic end aimed at the engine. Do NOT touch moving belts, fans, or hot manifolds. Hold steady ~30 s.",
-    preset: {
-      zone: "ENGINE_BAY_CENTER",
-      distanceBand: "NEAR",
-      heightBand: "MID",
-      hood: "OPEN",
-      phoneOrientation: "MIC_TOWARD_SOURCE",
-    },
+    instructions: "Open the hood. Stand at the front and hold the phone 20&ndash;40 cm above the valve covers / intake, mic end toward the engine. Keep clear of belts, the fan and hot manifolds. Hold still ~30 s.",
+    recommended: "Engine bay spot, hood Open, Near, Mid height",
+    preset: { position: "ENGINE_BAY", hood: "OPEN", distanceBand: "NEAR", heightBand: "MID", phoneOrientation: "MIC_TOWARD_SOURCE" },
     showPhone: true,
   },
   {
     id: "step-free",
-    title: "3. Free Capture",
+    title: "3. Walk-around (optional)",
     badge: "Step 3 of 3",
-    instructions: "Custom position mode. Select any zone on the vehicle outline (oil pan, wheel wells, grille) and configure custom distance, height, and hood states.",
-    // No preset: free capture keeps whatever the user has set.
+    instructions: "Extra clips help us separate the engine from the surroundings. Driver and passenger front corners (~0.3 m from the front wheel, 15 s each) compare the two banks. Any ring position is fine: tap where you actually stand.",
+    recommended: "Front corners, or any spot on the ring",
     preset: null,
     showPhone: false,
   },
@@ -94,7 +86,9 @@ export function createCaptureGuide(container, { onStep } = {}) {
         </div>
         <div class="guide-body">
           ${step.showPhone ? `<div class="guide-illustration" title="Point the bottom microphone at the engine sound source">${PHONE_SVG}</div>` : ""}
-          <div class="guide-instructions">${step.instructions}</div>
+          <div class="guide-instructions">${step.instructions}
+            <div class="guide-recommended"><strong>Recommended:</strong> ${step.recommended}. <span class="muted">Can&rsquo;t stand there? Tap any spot on the outline; we save what you pick.</span></div>
+          </div>
         </div>
         <div class="guide-nav">
           <button type="button" class="guide-btn" id="guide-prev" ${stepIndex === 0 ? "disabled" : ""}>&larr; Back</button>

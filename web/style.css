@@ -293,20 +293,103 @@ textarea {
   user-select: none;
 }
 
-.car-zone {
+/* Exterior ring spots (vehicle-picker.js) */
+.vp-spot {
   cursor: pointer;
-  transition: fill 0.15s ease, stroke 0.15s ease, filter 0.15s ease;
   outline: none;
 }
 
-.car-zone:focus {
-  filter: drop-shadow(0 0 4px var(--accent-blue));
+.vp-dot {
+  fill: #1e293b;
+  stroke: #64748b;
+  stroke-width: 2;
+  transition: fill 0.15s ease, stroke 0.15s ease;
 }
 
-.car-zone.active {
-  fill: rgba(59, 130, 246, 0.45) !important;
-  stroke: #60a5fa !important;
-  stroke-width: 2.2 !important;
+.vp-spot:focus .vp-dot,
+.vp-spot:focus .vp-bay-rect {
+  stroke: var(--accent-blue);
+  stroke-width: 3;
+}
+
+.vp-spot.active .vp-dot {
+  fill: #2563eb;
+  stroke: #bfdbfe;
+  stroke-width: 2.5;
+}
+
+.vp-dot-text {
+  fill: #e2e8f0;
+  pointer-events: none;
+}
+
+.vp-label {
+  fill: #94a3b8;
+  pointer-events: none;
+}
+
+.vp-label.active {
+  fill: #bfdbfe;
+}
+
+.vp-bay-rect {
+  fill: rgba(30, 41, 59, 0.6);
+  stroke: #64748b;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+
+.vp-bay.active .vp-bay-rect {
+  fill: rgba(37, 99, 235, 0.45);
+  stroke: #bfdbfe;
+  stroke-dasharray: none;
+}
+
+.vp-bay-text {
+  fill: #94a3b8;
+  pointer-events: none;
+}
+
+.vp-bay.active .vp-bay-text {
+  fill: #eff6ff;
+}
+
+.picker-env-readout {
+  font-size: 0.78rem;
+  color: #fdba74;
+  text-align: center;
+}
+
+/* Segmented buttons (tailpipe outlet) */
+.seg-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+}
+
+.seg-buttons[hidden] {
+  display: none;
+}
+
+.seg-btn {
+  min-height: var(--tap-target);
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: var(--bg-input);
+  color: var(--text-main);
+  font-size: 0.85rem;
+}
+
+.seg-btn.active {
+  background: var(--accent-blue);
+  border-color: #93c5fd;
+}
+
+.guide-recommended {
+  margin-top: 6px;
+  font-size: 0.85rem;
 }
 
 .picker-readout {

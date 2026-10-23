@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- File: web/index.html | Cam_I_hear_it idle capture interface with 360 vehicle picker, guided capture flow, live spectrogram, and acoustic analysis -->
+<!-- File: web/index.html | Cam_I_hear_it idle capture interface with exterior standing-position picker, noise-environment form, guided capture flow, live spectrogram, and acoustic analysis -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -103,86 +103,130 @@
       </label>
     </fieldset>
 
-    <!-- Tap-to-Place Vehicle Outline Picker & Acoustic Geometry -->
-    <fieldset class="section-card">
-      <legend class="section-heading">Microphone Position &amp; Environment</legend>
-      <div class="toggle-row">
-        <label class="checkbox-inline">
-          <input id="rhd" type="checkbox"> Right-Hand Drive (RHD cabin)
-        </label>
-      </div>
+    <!-- Where the user stands around the car (exterior ring) + capture geometry -->
+    <fieldset class="section-card" id="positionSection">
+      <legend class="section-heading">Where are you standing?</legend>
+      <label class="field field-full">
+        <span class="field-label">Steering side</span>
+        <select id="driveSide">
+          <option value="LHD" selected>LHD: driver on the left (US, EU)</option>
+          <option value="RHD">RHD: driver on the right (UK, JP, AU)</option>
+        </select>
+      </label>
 
       <div class="picker-wrapper">
         <div id="vehiclePicker"></div>
       </div>
 
-      <!-- Hidden select mirror for tests/backwards compatibility -->
-      <select id="zone" class="visually-hidden" aria-hidden="true" tabindex="-1">
-        <option value="TAILPIPE_LEFT">Tailpipe Left</option>
-        <option value="TAILPIPE_RIGHT">Tailpipe Right</option>
-        <option value="TAILPIPE_CENTER">Tailpipe Center</option>
-        <option value="ENGINE_BAY_CENTER">Engine Bay Center</option>
-        <option value="ENGINE_BAY_LEFT">Engine Bay Left</option>
-        <option value="ENGINE_BAY_RIGHT">Engine Bay Right</option>
-        <option value="ENGINE_BAY_LOW">Engine Bay Low / Oil Pan</option>
-        <option value="GRILLE">Front Grille</option>
-        <option value="FRONT_WHEEL_LEFT">Front Wheel Left</option>
-        <option value="FRONT_WHEEL_RIGHT">Front Wheel Right</option>
-        <option value="REAR_WHEEL_LEFT">Rear Wheel Left</option>
-        <option value="REAR_WHEEL_RIGHT">Rear Wheel Right</option>
-        <option value="REAR_BUMPER">Rear Bumper</option>
-        <option value="CABIN">Cabin</option>
-      </select>
-
       <div class="grid-form">
         <label class="field">
-          <span class="field-label">Distance to source</span>
+          <span class="field-label">Distance to the car / source</span>
           <select id="distanceBand">
-            <option value="NEAR">Near (&le; 0.3 m, engine bay)</option>
-            <option value="MID" selected>Mid (0.3 &ndash; 1 m, tailpipe standard)</option>
-            <option value="FAR">Far (1 &ndash; 3 m)</option>
-            <option value="VERY_FAR">Very Far (&gt; 3 m)</option>
-          </select>
-        </label>
-        <label class="field">
-          <span class="field-label">Microphone height</span>
-          <select id="heightBand">
-            <option value="GROUND">Ground plane (comb reflection removed)</option>
-            <option value="LOW" selected>Low (&lt; 0.5 m, exhaust height)</option>
-            <option value="MID">Mid (0.5 &ndash; 1.2 m, engine deck)</option>
-            <option value="HIGH">High (&gt; 1.2 m)</option>
-          </select>
-        </label>
-        <label class="field">
-          <span class="field-label">Hood state</span>
-          <select id="hood">
-            <option value="NA">N/A (rear / exhaust capture)</option>
-            <option value="OPEN">Open (recommended for engine bay)</option>
-            <option value="CLOSED">Closed</option>
+            <option value="NEAR">Near (&le; 0.3 m)</option>
+            <option value="MID" selected>Mid (0.3&ndash;1 m; tailpipe 0.5 m)</option>
+            <option value="FAR">Far (1&ndash;3 m)</option>
+            <option value="VERY_FAR">Very far (&gt; 3 m)</option>
           </select>
         </label>
         <label class="field">
           <span class="field-label">Phone orientation</span>
           <select id="phoneOrientation">
-            <option value="MIC_TOWARD_SOURCE" selected>Bottom edge (mic) pointing at source</option>
+            <option value="MIC_TOWARD_SOURCE" selected>Bottom edge (mic) pointing at the car</option>
             <option value="MIC_AWAY">Bottom edge pointing away</option>
             <option value="FLAT_FACE_UP">Flat, screen facing up</option>
             <option value="UNKNOWN">Unknown / handheld</option>
           </select>
         </label>
         <label class="field">
+          <span class="field-label">Hood state</span>
+          <select id="hood">
+            <option value="CLOSED" selected>Closed</option>
+            <option value="OPEN">Open</option>
+            <option value="NA">Not sure / not relevant</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Phone height</span>
+          <select id="heightBand">
+            <option value="GROUND">On the ground</option>
+            <option value="LOW" selected>Low (&lt; 0.5 m, pipe height)</option>
+            <option value="MID">Mid (0.5&ndash;1.2 m, waist)</option>
+            <option value="HIGH">High (&gt; 1.2 m, chest+)</option>
+          </select>
+        </label>
+        <label class="field">
           <span class="field-label">Engine temperature</span>
           <select id="engineTemp">
-            <option value="WARM" selected>Warm (operating temperature idle)</option>
-            <option value="COLD">Cold start (high flare idle)</option>
+            <option value="WARM" selected>Warm (normal idle)</option>
+            <option value="COLD">Cold start (fast idle)</option>
           </select>
         </label>
       </div>
 
       <label class="field field-full">
         <span class="field-label">Position notes (optional)</span>
-        <input id="positionNotes" type="text" placeholder="e.g. 45° off driver tip, directly over #3 intake runner">
+        <input id="positionNotes" type="text" placeholder="e.g. 45&deg; off the driver tip, kneeling">
       </label>
+    </fieldset>
+
+    <!-- Optional noise environment: used for spatial noise handling (docs/RESEARCH_ACOUSTICS.md §10) -->
+    <fieldset class="section-card" id="envSection">
+      <legend class="section-heading">Noise environment (optional)</legend>
+      <p class="muted">Tells us what else the mic may hear, and from where. Shown on the outline above.</p>
+      <div class="grid-form">
+        <label class="field">
+          <span class="field-label">Location</span>
+          <select id="envSetting">
+            <option value="">Not set</option>
+            <option value="INDOOR_GARAGE">Indoor garage</option>
+            <option value="COVERED_CARPORT">Carport / covered</option>
+            <option value="OUTDOOR_OPEN_LOT">Outdoor, open lot</option>
+            <option value="OUTDOOR_DRIVEWAY_STREET">Outdoor, driveway / street</option>
+            <option value="OTHER">Other</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Wall or building nearby</span>
+          <select id="wallSide" class="dir-select">
+            <option value="">None / not set</option>
+            <option value="FRONT">In front of the car</option>
+            <option value="REAR">Behind the car</option>
+            <option value="LEFT" data-side="LEFT">Driver side</option>
+            <option value="RIGHT" data-side="RIGHT">Passenger side</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Wind</span>
+          <select id="wind">
+            <option value="">Not set</option>
+            <option value="NONE">None</option>
+            <option value="LIGHT">Light</option>
+            <option value="STRONG">Strong</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Traffic / other noise from</span>
+          <select id="noiseDirection" class="dir-select">
+            <option value="">None / not set</option>
+            <option value="FRONT">In front of the car</option>
+            <option value="REAR">Behind the car</option>
+            <option value="LEFT" data-side="LEFT">Driver side</option>
+            <option value="RIGHT" data-side="RIGHT">Passenger side</option>
+            <option value="ALL_AROUND">All around</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Noise type</span>
+          <select id="noiseKind">
+            <option value="">Not set</option>
+            <option value="TRAFFIC">Traffic</option>
+            <option value="OTHER_ENGINE">Another engine idling</option>
+            <option value="PEOPLE">People talking</option>
+            <option value="MACHINERY_HVAC">Machinery / HVAC / fans</option>
+            <option value="OTHER">Other</option>
+          </select>
+        </label>
+      </div>
     </fieldset>
 
     <!-- Mic Hardware Applied Settings Inspection -->

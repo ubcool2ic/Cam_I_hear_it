@@ -2,16 +2,17 @@
  * @file web/app.js
  * @summary Cam_I_hear_it capture page controller. Opens the mic with voice processing off (and shows what the browser
  * actually applied), records via an AudioWorklet, draws a hi-DPI log-frequency spectrogram, runs live (every 2 s, last
- * 8 s) and final analysis with the DSP lib, wires the 360° position picker and guided capture steps, and builds the
+ * 8 s) and final analysis with the DSP lib, wires the 360° exterior standing-position picker, noise-environment form and guided capture steps, and builds the
  * JSON payload for download or strictly opt-in POST (audio is never uploaded).
  */
 
 import { analyzeClip, FEATURE_SCHEMA } from "./lib/index.js";
-import { createVehiclePicker } from "./vehicle-picker.js";
+import { createVehiclePicker, seatSideOf } from "./vehicle-picker.js";
 import { createCaptureGuide } from "./capture-guide.js";
 
 /** Upload payload schema version id. */
-const PAYLOAD_SCHEMA = "cam-i-hear-it/upload@1";
+/** Upload payload schema. @2: exterior standing position (position_id, side, seatSide, facing), driveSide and environment. */
+const PAYLOAD_SCHEMA = "cam-i-hear-it/upload@2";
 
 /** Rolling window length (seconds) for live background analysis. */
 const LIVE_WINDOW_S = 8;
@@ -49,7 +50,10 @@ const state = {
   features: null,
   startedAt: null,
   currentGuideStep: "step-tailpipe",
-  pickerValue: { zone: "TAILPIPE_LEFT", side: "LEFT", tapXY: [0.28, 0.93] },
+  /** Latest picker value (see vehicle-picker.js getValue); set at startup. */
+  pickerValue: null,
+  /** The current guide step's recommended position id (null for free steps). */
+  recommendedPosition: null,
 };
 
 /**
@@ -244,17 +248,25 @@ function buildPayload() {
     },
     capture: {
       guideStep: state.currentGuideStep,
-      rhd: $("rhd").checked,
+      recommendedPosition: state.recommendedPosition,
+      followedRecommendation: state.recommendedPosition ? state.recommendedPosition === state.pickerValue.position_id : null,
+      driveSide: val("driveSide"),
+      // LEFT/RIGHT are vehicle-frame (driver's-seat view); seatSide maps them to DRIVER/PASSENGER via driveSide.
+      sideConvention: "vehicle-frame",
       position: {
-        zone: state.pickerValue.zone,
+        position_id: state.pickerValue.position_id,
+        ring: state.pickerValue.ring,
         side: state.pickerValue.side,
-        tapXY: state.pickerValue.tapXY,
+        seatSide: state.pickerValue.seatSide,
+        tailpipe: state.pickerValue.tailpipe,
+        facing: state.pickerValue.facing,
         distanceBand: val("distanceBand"),
         heightBand: val("heightBand"),
         hood: val("hood"),
         phoneOrientation: val("phoneOrientation"),
         notes: val("positionNotes") || null,
       },
+      environment: readEnvironment(),
       engineTemp: val("engineTemp"),
       durationS: state.sampleRate ? state.total / state.sampleRate : 0,
     },
@@ -548,48 +560,76 @@ function stopCapture() {
   }
 }
 
-// Initialise Submodules: Vehicle Outline Picker & Capture Guide
+/**
+ * Reads the optional noise-environment form (null = not set). Directions are vehicle-frame
+ * (FRONT/REAR/LEFT/RIGHT/ALL_AROUND); LEFT/RIGHT also get a DRIVER/PASSENGER seat side.
+ * @returns {{setting:string|null, wallSide:string|null, wallSeatSide:string|null, wind:string|null,
+ *   noise:{direction:string, seatSide:string|null, kind:string|null}|null}}
+ */
+function readEnvironment() {
+  const v = (id) => ($(id) && $(id).value) || null;
+  const seat = (d) => (d === "LEFT" || d === "RIGHT" ? seatSideOf(d, v("driveSide") || "LHD") : null);
+  const dir = v("noiseDirection");
+  return {
+    setting: v("envSetting"),
+    wallSide: v("wallSide"),
+    wallSeatSide: seat(v("wallSide")),
+    wind: v("wind"),
+    noise: dir ? { direction: dir, seatSide: seat(dir), kind: v("noiseKind") } : null,
+  };
+}
+
+/** Relabels LEFT/RIGHT options in the direction selects as Driver/Passenger side for the current LHD/RHD. */
+function relabelDirections() {
+  const d = $("driveSide").value;
+  document.querySelectorAll(".dir-select option[data-side]").forEach((o) => {
+    o.textContent = `${seatSideOf(o.dataset.side, d) === "DRIVER" ? "Driver" : "Passenger"} side`;
+  });
+}
+
+/** Pushes the environment form into the picker overlay. */
+function syncEnvironment() {
+  const e = readEnvironment();
+  picker.setEnvironment({ setting: e.setting, wallSide: e.wallSide, wind: e.wind, noiseDirection: e.noise?.direction ?? null, noiseKind: e.noise?.kind ?? null });
+}
+
+// Exterior-position picker and guided capture.
 const picker = createVehiclePicker($("vehiclePicker"), {
   onChange(val) {
     state.pickerValue = val;
-    $("zone").value = val.zone;
+    // Choosing the engine-bay spot implies the hood is open.
+    if (val.position_id === "ENGINE_BAY") $("hood").value = "OPEN";
     refreshPayload();
   },
 });
-
 state.pickerValue = picker.getValue();
 
 createCaptureGuide($("captureGuide"), {
   onStep(step) {
     state.currentGuideStep = step.id;
-    if (step.preset) {
-      if (step.preset.zone) {
-        picker.setZone(step.preset.zone);
-        $("zone").value = step.preset.zone;
-        state.pickerValue = picker.getValue();
-      }
-      if (step.preset.distanceBand) $("distanceBand").value = step.preset.distanceBand;
-      if (step.preset.heightBand) $("heightBand").value = step.preset.heightBand;
-      if (step.preset.hood) $("hood").value = step.preset.hood;
-      if (step.preset.phoneOrientation) $("phoneOrientation").value = step.preset.phoneOrientation;
-      if (step.preset.engineTemp) $("engineTemp").value = step.preset.engineTemp;
+    state.recommendedPosition = step.preset?.position ?? null;
+    const p = step.preset;
+    if (p) {
+      if (p.tailpipe) picker.setTailpipe(p.tailpipe === "DRIVER" ? ($("driveSide").value === "RHD" ? "RIGHT" : "LEFT") : p.tailpipe);
+      for (const k of ["distanceBand", "heightBand", "hood", "phoneOrientation"]) if (p[k]) $(k).value = p[k];
+      if (p.position) picker.setPosition(p.position);
     }
+    state.pickerValue = picker.getValue();
     refreshPayload();
   },
 });
 
-// Sync RHD checkbox with vehicle picker
-$("rhd").addEventListener("change", (e) => {
-  picker.setRhd(e.target.checked);
-  refreshPayload();
-});
-
-// Hidden zone select fallback sync
-$("zone").addEventListener("change", (e) => {
-  picker.setZone(e.target.value);
+$("driveSide").addEventListener("change", (e) => {
+  picker.setDriveSide(e.target.value);
+  relabelDirections();
+  syncEnvironment();
   state.pickerValue = picker.getValue();
   refreshPayload();
 });
+for (const id of ["envSetting", "wallSide", "wind", "noiseDirection", "noiseKind"]) {
+  $(id).addEventListener("change", () => { syncEnvironment(); refreshPayload(); });
+}
+relabelDirections();
 
 // Bind recording and download actions
 $("start").onclick = startCapture;
