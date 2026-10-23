@@ -1,0 +1,301 @@
+<!doctype html>
+<!-- File: web/index.html | Cam_I_hear_it idle capture interface with exterior standing-position picker, noise-environment form, guided capture flow, live spectrogram, and acoustic analysis -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Cam_I_hear_it: Idle Acoustic Capture</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <h1>Cam_I_hear_it</h1>
+      <p class="subtitle">Vehicle engine idle acoustic recorder &amp; analyser</p>
+      <!-- Display units for every shown length (web/units.js); saved in localStorage. Payload stays in metres. -->
+      <div class="units-toggle" role="group" aria-label="Display units">
+        <span class="units-label">Units</span>
+        <div class="seg-buttons">
+          <button type="button" class="seg-btn" id="unitsMetric" data-units="metric" aria-pressed="false">Metric (m, cm)</button>
+          <button type="button" class="seg-btn" id="unitsImperial" data-units="imperial" aria-pressed="false">Imperial (ft, in)</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Guided Capture Walkthrough -->
+    <section class="section-card" aria-labelledby="guide-title">
+      <h2 id="guide-title" class="section-heading">Capture Walkthrough</h2>
+      <div id="captureGuide"></div>
+    </section>
+
+    <!-- Real-time Readout Dashboard -->
+    <section class="section-card" aria-label="Acoustic Readout">
+      <div class="readout-grid">
+        <div class="card card-primary">
+          <span class="card-caption">Estimated RPM</span>
+          <b id="rpm" class="card-hero">&ndash;</b>
+          <span id="rpmConf" class="card-sub">&ndash; Hz firing</span>
+        </div>
+        <div class="card">
+          <span class="card-caption">Cylinder Count</span>
+          <b id="cyl" class="card-hero">&ndash;</b>
+          <div class="meter-track"><div id="cylBar" class="meter-fill" style="width: 0%;"></div></div>
+          <span id="cylNote" class="card-sub">&ndash;</span>
+        </div>
+        <div class="card">
+          <span class="card-caption">Idle Lope Score</span>
+          <b id="lope" class="card-hero">&ndash;</b>
+          <div class="meter-track"><div id="lopeBar" class="meter-fill meter-lope" style="width: 0%;"></div></div>
+          <span id="lopeNote" class="card-sub">0 smooth &ndash; 100 choppy (provisional, uncalibrated)</span>
+        </div>
+        <div class="card">
+          <span class="card-caption">Recording Time</span>
+          <b id="time" class="card-hero">0 s</b>
+          <span id="sr" class="card-sub">Audio rate: &ndash;</span>
+        </div>
+        <div class="card card-muted">
+          <span class="card-caption">Combustion Knock</span>
+          <b class="card-hero card-hero-text">Not testable at idle</b>
+          <span class="card-sub">Spark knock needs load; use a rev/load test</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Spectrogram Visualiser -->
+    <section class="section-card" aria-label="Live Spectrogram">
+      <div class="spectrogram-container">
+        <canvas id="spec" width="900" height="240"></canvas>
+      </div>
+      <p class="canvas-caption">Log-frequency spectrogram (20 Hz &ndash; 8 kHz, bottom to top). Live scrolling display.</p>
+      <div id="warnings" class="warnings-box" role="alert" aria-live="polite"></div>
+    </section>
+
+    <!-- Vehicle Details Form -->
+    <fieldset class="section-card">
+      <legend class="section-heading">Vehicle Information</legend>
+      <div class="grid-form">
+        <label class="field">
+          <span class="field-label">Make</span>
+          <input id="make" type="text" placeholder="e.g. Chevrolet" autocomplete="off">
+        </label>
+        <label class="field">
+          <span class="field-label">Model</span>
+          <input id="model" type="text" placeholder="e.g. Silverado 1500" autocomplete="off">
+        </label>
+        <label class="field">
+          <span class="field-label">Year</span>
+          <input id="year" type="number" min="1900" max="2100" placeholder="2008">
+        </label>
+        <label class="field">
+          <span class="field-label">Engine</span>
+          <input id="engine" type="text" placeholder="e.g. 5.3L V8 (LY5)" autocomplete="off">
+        </label>
+        <label class="field">
+          <span class="field-label">Cylinders (optional)</span>
+          <select id="cylinders">
+            <option value="">Unknown / auto-detect</option>
+            <option value="3">3 cylinders</option>
+            <option value="4">4 cylinders</option>
+            <option value="5">5 cylinders</option>
+            <option value="6">6 cylinders</option>
+            <option value="8">8 cylinders</option>
+            <option value="10">10 cylinders</option>
+            <option value="12">12 cylinders</option>
+          </select>
+        </label>
+      </div>
+      <label class="field field-full">
+        <span class="field-label">Modifications (cam, headers, exhaust, tune)</span>
+        <textarea id="mods" rows="2" placeholder="e.g. TSP 224/230 .600 lift 112 LSA cam, long-tubes, catless X-pipe, mail-order tune"></textarea>
+      </label>
+    </fieldset>
+
+    <!-- Where the user stands around the car (exterior ring) + capture geometry -->
+    <fieldset class="section-card" id="positionSection">
+      <legend class="section-heading">Where are you standing?</legend>
+      <label class="field field-full">
+        <span class="field-label">Steering side</span>
+        <select id="driveSide">
+          <option value="LHD" selected>LHD: driver on the left (US, EU)</option>
+          <option value="RHD">RHD: driver on the right (UK, JP, AU)</option>
+        </select>
+      </label>
+
+      <div class="picker-wrapper">
+        <div id="vehiclePicker"></div>
+      </div>
+
+      <div class="grid-form">
+        <label class="field">
+          <span class="field-label">Distance to the car / source</span>
+          <select id="distanceBand">
+            <option value="NEAR" data-len="Near (&le; {0.3})">Near (&le; 0.3 m)</option>
+            <option value="MID" selected data-len="Mid ({0.3-1}; tailpipe {0.5})">Mid (0.3&ndash;1 m; tailpipe 0.5 m)</option>
+            <option value="FAR" data-len="Far ({1-3})">Far (1&ndash;3 m)</option>
+            <option value="VERY_FAR" data-len="Very far (&gt; {3})">Very far (&gt; 3 m)</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Phone orientation</span>
+          <select id="phoneOrientation">
+            <option value="MIC_TOWARD_SOURCE" selected>Bottom edge (mic) pointing at the car</option>
+            <option value="MIC_AWAY">Bottom edge pointing away</option>
+            <option value="FLAT_FACE_UP">Flat, screen facing up</option>
+            <option value="UNKNOWN">Unknown / handheld</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Hood state</span>
+          <select id="hood">
+            <option value="CLOSED" selected>Closed</option>
+            <option value="OPEN">Open</option>
+            <option value="NA">Not sure / not relevant</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Phone height</span>
+          <select id="heightBand">
+            <option value="GROUND">On the ground</option>
+            <option value="LOW" selected data-len="Low (&lt; {0.5}, pipe height)">Low (&lt; 0.5 m, pipe height)</option>
+            <option value="MID" data-len="Mid ({0.5-1.2}, waist)">Mid (0.5&ndash;1.2 m, waist)</option>
+            <option value="HIGH" data-len="High (&gt; {1.2}, chest+)">High (&gt; 1.2 m, chest+)</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Engine temperature</span>
+          <select id="engineTemp">
+            <option value="WARM" selected>Warm (normal idle)</option>
+            <option value="COLD">Cold start (fast idle)</option>
+          </select>
+        </label>
+      </div>
+
+      <label class="field field-full">
+        <span class="field-label">Position notes (optional)</span>
+        <input id="positionNotes" type="text" placeholder="e.g. 45&deg; off the driver tip, 0.5 m away, kneeling" data-len="e.g. 45&deg; off the driver tip, {0.5} away, kneeling" data-len-attr="placeholder">
+      </label>
+    </fieldset>
+
+    <!-- Optional noise environment: used for spatial noise handling (docs/RESEARCH_ACOUSTICS.md §10) -->
+    <fieldset class="section-card" id="envSection">
+      <legend class="section-heading">Noise environment (optional)</legend>
+      <p class="muted">Tells us what else the mic may hear, and from where. Shown on the outline above.</p>
+      <div class="grid-form">
+        <label class="field">
+          <span class="field-label">Location</span>
+          <select id="envSetting">
+            <option value="">Not set</option>
+            <option value="INDOOR_GARAGE">Indoor garage</option>
+            <option value="COVERED_CARPORT">Carport / covered</option>
+            <option value="OUTDOOR_OPEN_LOT">Outdoor, open lot</option>
+            <option value="OUTDOOR_DRIVEWAY_STREET">Outdoor, driveway / street</option>
+            <option value="OTHER">Other</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Wall or building nearby</span>
+          <select id="wallSide" class="dir-select">
+            <option value="">None / not set</option>
+            <option value="FRONT">In front of the car</option>
+            <option value="REAR">Behind the car</option>
+            <option value="LEFT" data-side="LEFT">Driver side</option>
+            <option value="RIGHT" data-side="RIGHT">Passenger side</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Wind</span>
+          <select id="wind">
+            <option value="">Not set</option>
+            <option value="NONE">None</option>
+            <option value="LIGHT">Light</option>
+            <option value="STRONG">Strong</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Traffic / other noise from</span>
+          <select id="noiseDirection" class="dir-select">
+            <option value="">None / not set</option>
+            <option value="FRONT">In front of the car</option>
+            <option value="REAR">Behind the car</option>
+            <option value="LEFT" data-side="LEFT">Driver side</option>
+            <option value="RIGHT" data-side="RIGHT">Passenger side</option>
+            <option value="ALL_AROUND">All around</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Noise type</span>
+          <select id="noiseKind">
+            <option value="">Not set</option>
+            <option value="TRAFFIC">Traffic</option>
+            <option value="OTHER_ENGINE">Another engine idling</option>
+            <option value="PEOPLE">People talking</option>
+            <option value="MACHINERY_HVAC">Machinery / HVAC / fans</option>
+            <option value="OTHER">Other</option>
+          </select>
+        </label>
+      </div>
+    </fieldset>
+
+    <!-- Mic Hardware Applied Settings Inspection -->
+    <details id="micAudit" class="section-card mic-audit-card">
+      <summary class="mic-audit-summary">Mic settings applied (getSettings)</summary>
+      <div id="micAuditBody" class="mic-audit-content">
+        <p class="muted">We request all voice processing off. This table shows what the browser reports it actually applied (<code>track.getSettings()</code>). iOS Safari may keep AGC or noise suppression on; timing features (RPM, lope) still work, level features are less reliable.</p>
+        <p id="micSummary" class="muted"></p>
+        <div class="table-scroll">
+          <table class="audit-table">
+            <thead>
+              <tr><th>Constraint</th><th>Requested</th><th>Applied</th><th>Status</th><th>Supp.</th></tr>
+            </thead>
+            <tbody id="micAuditRows">
+              <tr><td colspan="5" class="muted">Microphone not initialized yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p id="micDeviceId" class="muted mic-device-label"></p>
+      </div>
+    </details>
+
+    <!-- Cloud Upload (Opt-in) -->
+    <fieldset class="section-card">
+      <legend class="section-heading">Cloud Feature Submission (Optional)</legend>
+      <p class="muted">Only acoustic feature statistics, vehicle metadata, and mic hardware info are sent. <strong>Audio recordings are never uploaded.</strong></p>
+      <label class="field field-full">
+        <span class="field-label">Submission endpoint URL</span>
+        <input id="postUrl" type="url" placeholder="https://your-backend.example/api/v1/clips">
+      </label>
+      <label class="checkbox-inline">
+        <input id="postEnable" type="checkbox">
+        <span>Enable upload (explicit consent required)</span>
+      </label>
+      <div class="action-row">
+        <button id="post" type="button" class="btn btn-secondary" disabled>POST Payload</button>
+        <span id="postStatus" class="status-indicator"></span>
+      </div>
+    </fieldset>
+
+    <!-- Raw Payload Viewer -->
+    <details class="section-card">
+      <summary class="section-heading-sub">Inspect JSON Payload</summary>
+      <pre id="payload" class="payload-dump">(record a clip to generate payload)</pre>
+    </details>
+
+    <!-- Mobile-Sticky Record & Action Bar -->
+    <nav class="record-bar" aria-label="Recording controls">
+      <div class="record-bar-inner">
+        <button id="start" type="button" class="btn btn-record">
+          <span class="record-dot"></span> Record
+        </button>
+        <button id="stop" type="button" class="btn btn-stop" disabled>
+          <span class="stop-square"></span> Stop
+        </button>
+        <button id="dlJson" type="button" class="btn btn-action" disabled>JSON</button>
+        <button id="dlWav" type="button" class="btn btn-action" disabled>WAV</button>
+      </div>
+    </nav>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
