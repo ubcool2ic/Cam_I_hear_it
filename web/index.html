@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- File: web/index.html | Cam_I_hear_it idle capture interface with exterior standing-position picker, noise-environment form, guided capture flow, live spectrogram, and acoustic analysis -->
+<!-- File: web/index.html | Cam_I_hear_it idle capture interface: first-visit consent gate (Terms + Privacy), exterior standing-position picker, noise-environment form, guided capture flow, live spectrogram, acoustic analysis, and automatic sample saving -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -9,6 +9,28 @@
   <link rel="icon" href="data:,">
 </head>
 <body>
+  <!-- First-visit consent gate (web/consent.js). Shown until the current policy version is accepted; Record stays disabled. -->
+  <div id="consentModal" class="consent-modal" role="dialog" aria-modal="true" aria-labelledby="consentTitle" hidden>
+    <div class="consent-card">
+      <h2 id="consentTitle">Before you start</h2>
+      <p class="muted">Cam_I_hear_it is an experimental research tool. In short:</p>
+      <ul class="consent-list">
+        <li><strong>Your samples are saved automatically.</strong> Each recording you make is saved: the audio clip, the analysis, the vehicle and position details you enter, the mic settings your browser applied, the time, and your browser type. No name or account.</li>
+        <li>Samples are used to research and improve engine-sound analysis and to train models. <strong>We never sell your data.</strong></li>
+        <li>The mic can pick up voices and background sounds. Don&rsquo;t talk during a clip, and don&rsquo;t record other people.</li>
+        <li>Results are estimates, <strong>not a mechanical diagnosis</strong>.</li>
+        <li>Stay safe: never run the engine in a closed garage, and keep clear of fans, belts and hot exhaust.</li>
+        <li>Not for children under 13.</li>
+      </ul>
+      <p>Read the full <a href="terms.html">Terms of Use</a> and <a href="privacy.html">Privacy Policy</a>.</p>
+      <label class="checkbox-inline consent-check">
+        <input id="consentAgree" type="checkbox">
+        <span>I agree to the Terms of Use and Privacy Policy</span>
+      </label>
+      <button id="consentContinue" type="button" class="btn btn-record consent-continue" disabled>Continue</button>
+    </div>
+  </div>
+
   <div class="app-shell">
     <header class="app-header">
       <h1>Cam_I_hear_it</h1>
@@ -128,13 +150,16 @@
 
       <div class="grid-form">
         <label class="field">
-          <span class="field-label">Distance to the car / source</span>
-          <select id="distanceBand">
-            <option value="NEAR" data-len="Near (&le; {0.3})">Near (&le; 0.3 m)</option>
-            <option value="MID" selected data-len="Mid ({0.3-1}; tailpipe {0.5})">Mid (0.3&ndash;1 m; tailpipe 0.5 m)</option>
-            <option value="FAR" data-len="Far ({1-3})">Far (1&ndash;3 m)</option>
-            <option value="VERY_FAR" data-len="Very far (&gt; {3})">Very far (&gt; 3 m)</option>
+          <!-- Mic-to-car distance at the chosen spot. Label switches to "pipe outlet" / "engine" for those spots (app.js). -->
+          <span class="field-label" id="distanceLabel">Distance from the car</span>
+          <select id="distanceBand" aria-describedby="distanceHint">
+            <option value="TOUCHING" data-len="Touching / &lt; {0.15}">Touching / &lt; 15 cm</option>
+            <option value="CLOSE" data-len="{0.15-0.3}">15&ndash;30 cm</option>
+            <option value="MID" selected data-len="{0.3-1}">0.3&ndash;1 m</option>
+            <option value="FAR" data-len="{1-3}">1&ndash;3 m</option>
+            <option value="VERY_FAR" data-len="&gt; {3}">&gt; 3 m</option>
           </select>
+          <span class="field-hint" id="distanceHint">Phone mic to the nearest body panel.</span>
         </label>
         <label class="field">
           <span class="field-label">Phone orientation</span>
@@ -257,23 +282,13 @@
       </div>
     </details>
 
-    <!-- Cloud Upload (Opt-in) -->
-    <fieldset class="section-card">
-      <legend class="section-heading">Cloud Feature Submission (Optional)</legend>
-      <p class="muted">Only acoustic feature statistics, vehicle metadata, and mic hardware info are sent. <strong>Audio recordings are never uploaded.</strong></p>
-      <label class="field field-full">
-        <span class="field-label">Submission endpoint URL</span>
-        <input id="postUrl" type="url" placeholder="https://your-backend.example/api/v1/clips">
-      </label>
-      <label class="checkbox-inline">
-        <input id="postEnable" type="checkbox">
-        <span>Enable upload (explicit consent required)</span>
-      </label>
-      <div class="action-row">
-        <button id="post" type="button" class="btn btn-secondary" disabled>POST Payload</button>
-        <span id="postStatus" class="status-indicator"></span>
-      </div>
-    </fieldset>
+    <!-- Automatic sample saving (web/sample-store.js). Disclosed in privacy.html; no opt-in step. -->
+    <section class="section-card" aria-labelledby="save-title">
+      <h2 id="save-title" class="section-heading">Sample saving</h2>
+      <p class="muted">Each recording is saved automatically (audio, analysis and the details above), as described in the <a href="privacy.html">Privacy Policy</a>.</p>
+      <p id="saveStatus" class="status-indicator save-status" role="status" aria-live="polite">No sample yet.</p>
+      <p id="sampleIdLine" class="muted sample-id" hidden>Sample ID: <code id="sampleId"></code> (quote it to ask for deletion)</p>
+    </section>
 
     <!-- Raw Payload Viewer -->
     <details class="section-card">
@@ -294,6 +309,9 @@
         <button id="dlWav" type="button" class="btn btn-action" disabled>WAV</button>
       </div>
     </nav>
+    <footer class="app-footer">
+      <a href="terms.html">Terms of Use</a> &middot; <a href="privacy.html">Privacy Policy</a>
+    </footer>
   </div>
 
   <script type="module" src="app.js"></script>

@@ -21,3 +21,7 @@ The DSP fix (the browser vs offline lope mismatch) was written by hand, without 
 ### Round 2: exterior position picker rework (2026-10-23)
 
 No OpenRouter calls. The picker, environment form, guide, payload `upload@2` and the §10 note were written by hand. Key usage checked at 02:58 EDT: **137.775719**, unchanged, so the delta for this round is **$0.00**. Cumulative for this repo stays at **$0.148175** (4.9% of the $3.00 cap).
+
+### Round 3: units setting, then consent gate, policies, distance bands, auto-save (2026-10-23)
+
+No OpenRouter calls. Everything was written by hand. The key's account-wide usage at 15:22 EDT read 140.682119, up from 137.775719, but that key is shared with other work and this round made no requests, so the repo delta is **$0.00**. Cumulative for this repo stays at **$0.148175** (4.9% of the $3.00 cap).

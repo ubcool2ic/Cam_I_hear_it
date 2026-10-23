@@ -1,0 +1,30 @@
+/* File: web/legal.css | Plain, readable, mobile-first styling for privacy.html and terms.html */
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: #0b0d10;
+  color: #e2e8f0;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  padding: calc(12px + env(safe-area-inset-top, 0px)) 16px calc(24px + env(safe-area-inset-bottom, 0px));
+}
+main { max-width: 720px; margin-inline: auto; }
+h1 { font-size: 1.6rem; line-height: 1.25; margin: 8px 0 4px; }
+h2 { font-size: 1.15rem; margin: 26px 0 6px; }
+p, li { margin: 6px 0; }
+ul { padding-left: 1.2rem; }
+a { color: #60a5fa; }
+.meta { color: #94a3b8; font-size: 0.9rem; }
+.draft-note {
+  border: 1px solid #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+  color: #fde68a;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 12px 0;
+  font-weight: 600;
+}
+.todo { background: rgba(239, 68, 68, 0.18); color: #fecaca; padding: 0 4px; border-radius: 4px; font-weight: 600; }
+.back { display: inline-block; min-height: 44px; line-height: 44px; }

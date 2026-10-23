@@ -1,4 +1,4 @@
-/* File: web/style.css | Dark mobile-first iPhone layout with safe-area spacing and sticky record bar */
+/* File: web/style.css | Dark mobile-first iPhone layout with safe-area spacing, sticky record bar, consent modal and footer */
 
 :root {
   color-scheme: dark;
@@ -707,4 +707,95 @@ textarea {
 
 .units-toggle .seg-buttons {
   justify-content: flex-start;
+}
+
+/* Distance field hint (what the distance is measured to) */
+.field-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+/* Automatic sample saving status (web/sample-store.js) */
+.save-status {
+  margin-top: 8px;
+  font-size: 0.9rem;
+  color: var(--text-main);
+}
+
+.sample-id code {
+  font-size: 0.78rem;
+  word-break: break-all;
+}
+
+/* Footer with the policy links */
+.app-footer {
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  padding: 8px 0 4px;
+}
+
+.app-footer a,
+.section-card a,
+.consent-card a {
+  color: #60a5fa;
+}
+
+/* First-visit consent gate (web/consent.js): full-screen, blocks the page until accepted */
+.consent-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(5, 7, 10, 0.96);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-y: auto;
+  padding: calc(16px + var(--safe-top)) 14px calc(16px + var(--safe-bottom));
+}
+
+.consent-modal[hidden] {
+  display: none;
+}
+
+body.modal-open {
+  overflow: hidden;
+}
+
+.consent-card {
+  max-width: 520px;
+  width: 100%;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.consent-card h2 {
+  font-size: 1.25rem;
+}
+
+.consent-list {
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.92rem;
+}
+
+.consent-check {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.consent-continue {
+  width: 100%;
+  background: var(--accent-blue);
+}
+
+.consent-continue:not(:disabled):hover {
+  background: #2563eb;
 }

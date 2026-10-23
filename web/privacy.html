@@ -1,0 +1,76 @@
+<!doctype html>
+<!-- File: web/privacy.html | Cam_I_hear_it Privacy Policy (draft). Version must match CONSENT_VERSION in web/consent.js; bump both together to re-prompt users. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Privacy Policy: Cam_I_hear_it</title>
+  <link rel="stylesheet" href="legal.css">
+  <link rel="icon" href="data:,">
+</head>
+<body>
+<main>
+  <a class="back" href="index.html">&larr; Back to the tool</a>
+  <h1>Privacy Policy</h1>
+  <p class="meta">Cam_I_hear_it &middot; Version 2026-10-23 &middot; Effective October 23, 2026</p>
+  <p class="draft-note">Draft, not legal advice; have it reviewed before public launch.</p>
+
+  <p>Cam_I_hear_it is an experimental web tool that records the sound of an idling engine and estimates things like RPM, cylinder count and idle lope. This policy explains what we collect, why, and what you can do about it. &ldquo;We&rdquo; means the Cam_I_hear_it project run by its maintainer.</p>
+
+  <h2>1. Using the tool saves your sample automatically</h2>
+  <p>When you make a recording, the tool <strong>automatically saves a &ldquo;sample&rdquo;</strong>. There is no separate upload step. By accepting this policy you agree to that. If you don&rsquo;t want a sample saved, don&rsquo;t record.</p>
+  <p>Right now there is no collection server yet, so samples are saved <strong>in your browser on your device</strong> (in its IndexedDB storage). When the server is ready, samples waiting in your browser, and new ones, will be sent to it automatically.</p>
+
+  <h2>2. What a sample contains</h2>
+  <ul>
+    <li><strong>The audio clip</strong> you recorded (up to 2 minutes).</li>
+    <li><strong>Computed features</strong>: the numbers the tool calculated from the audio (for example RPM, firing frequency, lope score, spectrum statistics).</li>
+    <li><strong>Vehicle details you enter</strong>: make, model, year, engine, cylinder count, and modifications.</li>
+    <li><strong>Where you stood and the surroundings</strong>: the standing spot around the car, distance and height bands, hood state, phone orientation, any position notes you type, and the optional noise-environment answers (location type, nearby wall, wind, noise direction and type).</li>
+    <li><strong>Microphone settings your browser applied</strong> (such as echo cancellation, noise suppression, auto gain, sample rate). We remove the per-device microphone identifiers the browser reports.</li>
+    <li><strong>Timestamps</strong> of the recording, your <strong>browser&rsquo;s user agent</strong> (browser and operating-system type and version), your chosen display units, a random sample ID, and which version of this policy you accepted and when.</li>
+  </ul>
+  <p><strong>We do not ask for your name, email, or an account.</strong> Please don&rsquo;t type personal details into the free-text fields.</p>
+  <p><strong>Location:</strong> we do not collect your location. If we ever add it, it will only be collected with your permission through your browser&rsquo;s location prompt, and this policy will be updated first.</p>
+  <p><strong>Network data:</strong> like any website, the host serving these pages (currently GitHub Pages) and, later, our collection server will see technical data such as your IP address when your browser connects. We don&rsquo;t add your IP address to samples. <span class="todo">TODO (Tyler): confirm server logging and retention once the backend exists.</span></p>
+
+  <h2>3. Background sounds and voices</h2>
+  <p>The microphone records everything it hears, not only the engine. A clip may capture <strong>voices, conversations, or other background sounds</strong>. Please don&rsquo;t talk while recording, and <strong>don&rsquo;t record other people</strong> or private conversations. If you notice that a clip captured someone, ask us to delete it (section 7).</p>
+
+  <h2>4. How we use samples</h2>
+  <ul>
+    <li>To show you the analysis.</li>
+    <li>To <strong>research and improve engine-sound analysis</strong>, including building and testing methods.</li>
+    <li>To <strong>train and evaluate machine-learning models</strong>. Models trained on samples may be kept after the samples themselves are deleted.</li>
+  </ul>
+
+  <h2>5. Sharing</h2>
+  <p><strong>We do not sell your data.</strong> We don&rsquo;t share samples for advertising. We may share samples or derived data with people helping with the research (for example collaborators or service providers who host the data), and only for the purposes above. We may disclose data if the law requires it.</p>
+
+  <h2>6. How long we keep samples</h2>
+  <ul>
+    <li><strong>On your device:</strong> a sample stays in your browser until it is uploaded, or until you clear this site&rsquo;s data in your browser settings (which deletes it).</li>
+    <li><strong>On our server (once it exists):</strong> we keep samples for as long as they are useful for the research described above, or until you ask us to delete them. <span class="todo">TODO (Tyler): set a maximum retention period.</span></li>
+  </ul>
+
+  <h2>7. Deleting your samples</h2>
+  <p>Because there are no accounts, we can only find a sample by its <strong>sample ID</strong>. The tool shows it after each recording, and it is in the JSON download. To ask for deletion, contact us with the sample ID(s):</p>
+  <p><span class="todo">TODO (Tyler): add contact email / form here.</span></p>
+  <p>We will delete the matching samples from our stored data. We can&rsquo;t remove what a model has already learned from them, but we won&rsquo;t use deleted samples to train new models.</p>
+
+  <h2>8. Children</h2>
+  <p>The tool is not meant for children. <strong>If you are under 13, please don&rsquo;t use it.</strong> If you believe a child has sent us a sample, contact us and we will delete it.</p>
+
+  <h2>9. Security</h2>
+  <p>We use HTTPS and take reasonable steps to protect stored samples, but no system is perfectly secure.</p>
+
+  <h2>10. Changes to this policy</h2>
+  <p>If we change this policy we will update the version and date above. The tool will ask you to accept the new version before you can record again.</p>
+
+  <h2>11. Contact</h2>
+  <p><span class="todo">TODO (Tyler): contact details.</span> See also the <a href="terms.html">Terms of Use</a>.</p>
+
+  <p><a class="back" href="index.html">&larr; Back to the tool</a></p>
+</main>
+</body>
+</html>
