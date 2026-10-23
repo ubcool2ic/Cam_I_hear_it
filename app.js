@@ -4,23 +4,50 @@
  * actually applied), records via an AudioWorklet, draws a hi-DPI log-frequency spectrogram, runs live (every 2 s, last
  * 8 s) and final analysis with the DSP lib, wires the 360° exterior standing-position picker, noise-environment form,
  * guided capture steps and the metric/imperial display-units toggle (web/units.js), and builds the JSON payload
- * (always SI, plus capture.display_units) for download or strictly opt-in POST (audio is never uploaded).
+ * (always SI, plus capture.display_units). Record stays disabled until the Terms of Use and Privacy Policy are
+ * accepted (web/consent.js). After each recording the sample (payload + WAV) is saved automatically
+ * (web/sample-store.js): queued in IndexedDB on this device, and POSTed to UPLOAD_URL once a server is configured.
+ * JSON/WAV download buttons stay available.
  */
 
 import { analyzeClip, FEATURE_SCHEMA } from "./lib/index.js";
 import { createVehiclePicker, seatSideOf } from "./vehicle-picker.js";
 import { createCaptureGuide } from "./capture-guide.js";
 import { loadUnits, saveUnits, applyLengthTemplates } from "./units.js";
+import { requireConsent } from "./consent.js";
+import { saveSample, flushPending, UPLOAD_URL } from "./sample-store.js";
 
-/** Upload payload schema version id. */
-/** Upload payload schema. @2: exterior standing position (position_id, side, seatSide, facing), driveSide and environment. */
-const PAYLOAD_SCHEMA = "cam-i-hear-it/upload@2";
+/**
+ * Upload payload schema. @2: exterior standing position (position_id, side, seatSide, facing), driveSide, environment.
+ * @3 (non-additive): distanceBand is now the mic-to-car distance at the chosen spot with new codes
+ * (TOUCHING/CLOSE/MID/FAR/VERY_FAR; NEAR is gone), plus capture.position.distanceTo, sampleId, consent and audio.
+ */
+const PAYLOAD_SCHEMA = "cam-i-hear-it/upload@3";
 
 /**
  * SI (metre) ranges behind the distance/height band codes, written into the payload so it never depends on the
  * user's display units. [min, max]; max null = open-ended. Matches docs/RESEARCH_ACOUSTICS.md §10.2.
+ * Distance = phone mic to the car at the chosen spot: the pipe outlet at TAILPIPE, the engine at ENGINE_BAY,
+ * otherwise the nearest body panel (see DISTANCE_TO).
  */
-const DISTANCE_BAND_M = { NEAR: [0, 0.3], MID: [0.3, 1], FAR: [1, 3], VERY_FAR: [3, null] };
+const DISTANCE_BAND_M = { TOUCHING: [0, 0.15], CLOSE: [0.15, 0.3], MID: [0.3, 1], FAR: [1, 3], VERY_FAR: [3, null] };
+
+/** What the distance is measured to, per standing spot: [payload code, field label, hint]. Default: body panel. */
+const DISTANCE_TO = {
+  TAILPIPE: ["PIPE_OUTLET", "Distance from the pipe outlet", "Phone mic to the end of the pipe."],
+  ENGINE_BAY: ["ENGINE", "Distance from the engine", "Phone mic to the top of the engine (valve covers / intake)."],
+  default: ["BODY_PANEL", "Distance from the car", "Phone mic to the nearest body panel."],
+};
+
+/**
+ * Returns the distance band code whose range contains the whole recommended [min, max] metre range.
+ * @param {[number, number]} m
+ * @returns {string|null}
+ */
+function bandForDistance([lo, hi]) {
+  for (const [code, [min, max]] of Object.entries(DISTANCE_BAND_M)) if (lo >= min && hi <= (max ?? Infinity)) return code;
+  return null;
+}
 const HEIGHT_BAND_M = { GROUND: [0, 0], LOW: [0, 0.5], MID: [0.5, 1.2], HIGH: [1.2, null] };
 
 /** Rolling window length (seconds) for live background analysis. */
@@ -65,7 +92,18 @@ const state = {
   recommendedPosition: null,
   /** Display units for shown lengths ("metric" | "imperial"); display only, the payload stays in metres. */
   displayUnits: loadUnits(),
+  /** Accepted {version, acceptedAt} from web/consent.js; null until the user accepts. Gates Record. */
+  consent: null,
+  /** Random id for the current recording (also shown to the user for deletion requests). */
+  sampleId: null,
 };
+
+/** Random sample id; crypto.randomUUID needs a secure context, so fall back to getRandomValues. */
+function newSampleId() {
+  if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  return [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+}
 
 /**
  * Returns audio constraint configuration disabling browser speech filters.
@@ -244,11 +282,17 @@ function toJSON(obj) {
  */
 function buildPayload() {
   const val = (id) => ($(id) ? $(id).value.trim() : "");
+  const durationS = state.sampleRate ? state.total / state.sampleRate : 0;
   return {
     schema: PAYLOAD_SCHEMA,
     featureSchema: FEATURE_SCHEMA,
+    sampleId: state.sampleId,
     createdAt: new Date().toISOString(),
     recordingStartedAt: state.startedAt,
+    // Which Terms/Privacy version the user accepted, and when (web/consent.js).
+    consent: state.consent ? { version: state.consent.version, acceptedAt: state.consent.acceptedAt } : null,
+    // The WAV itself travels next to this JSON (sample-store.js), not inside it. Whole clip incl. the first second.
+    audio: { format: "audio/wav", encoding: "pcm_s16le", channels: 1, sampleRate: state.sampleRate, durationS },
     vehicle: {
       make: val("make"),
       model: val("model"),
@@ -273,6 +317,8 @@ function buildPayload() {
         seatSide: state.pickerValue.seatSide,
         tailpipe: state.pickerValue.tailpipe,
         facing: state.pickerValue.facing,
+        // Mic-to-car distance at this spot, measured to distanceTo (PIPE_OUTLET | ENGINE | BODY_PANEL).
+        distanceTo: (DISTANCE_TO[state.pickerValue.position_id] ?? DISTANCE_TO.default)[0],
         distanceBand: val("distanceBand"),
         distanceRangeM: DISTANCE_BAND_M[val("distanceBand")] ?? null,
         heightBand: val("heightBand"),
@@ -283,7 +329,7 @@ function buildPayload() {
       },
       environment: readEnvironment(),
       engineTemp: val("engineTemp"),
-      durationS: state.sampleRate ? state.total / state.sampleRate : 0,
+      durationS,
     },
     device: {
       userAgent: navigator.userAgent,
@@ -298,15 +344,12 @@ function buildPayload() {
 }
 
 /**
- * Refreshes payload display and upload button enabled state.
+ * Refreshes the payload viewer (after a clip has been analysed).
  */
 function refreshPayload() {
   if (state.features) {
     $("payload").textContent = toJSON(buildPayload());
   }
-  const url = $("postUrl").value.trim();
-  const validUrl = /^https?:\/\//i.test(url);
-  $("post").disabled = !(state.features && $("postEnable").checked && validUrl);
 }
 
 /**
@@ -355,22 +398,23 @@ function encodeWav(x, sr) {
 }
 
 /**
- * POSTs payload JSON features only to the user-entered URL. Audio is never sent.
+ * Saves the just-analysed sample automatically (payload + WAV) via sample-store.js and reports the outcome.
+ * With UPLOAD_URL empty this queues it in IndexedDB on this device.
  */
-async function postPayload() {
-  const url = $("postUrl").value.trim();
-  if (!$("postEnable").checked || !url) return;
-  const statusEl = $("postStatus");
-  statusEl.textContent = "sending…";
+async function autoSave() {
+  const statusEl = $("saveStatus");
+  statusEl.textContent = "Saving sample…";
+  $("sampleId").textContent = state.sampleId;
+  $("sampleIdLine").hidden = false;
   try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: toJSON(buildPayload()),
-    });
-    statusEl.textContent = `HTTP ${res.status}`;
+    const r = await saveSample(JSON.parse(toJSON(buildPayload())), encodeWav(samples(), state.sampleRate));
+    statusEl.textContent = r.status === "uploaded"
+      ? `Sample uploaded.${r.pending ? ` ${r.pending} more waiting on this device.` : ""}`
+      : r.status === "upload-failed"
+        ? `Saved on this device; upload failed, will retry next visit (${r.pending} waiting).`
+        : `Saved on this device; will upload when the server is ready (${r.pending} waiting).`;
   } catch (err) {
-    statusEl.textContent = `failed: ${err.message}`;
+    statusEl.textContent = `Could not save the sample on this device: ${err.message}. Use JSON / WAV to keep a copy.`;
   }
 }
 
@@ -455,6 +499,8 @@ function drawSpectrogram() {
  * Opens microphone stream, wires worklet recorder and analyser, and starts capture.
  */
 async function startCapture() {
+  // Consent gate: never record before the Terms of Use and Privacy Policy are accepted.
+  if (!state.consent) return;
   $("warnings").textContent = "";
   state.requestedConstraints = audioConstraints();
   state.supportedConstraints = navigator.mediaDevices.getSupportedConstraints
@@ -514,6 +560,7 @@ async function startCapture() {
   state.total = 0;
   state.features = null;
   state.startedAt = new Date().toISOString();
+  state.sampleId = newSampleId();
 
   state.node.port.onmessage = (ev) => {
     state.chunks.push(ev.data);
@@ -553,7 +600,7 @@ function stopCapture() {
     state.ctx.close();
   }
 
-  $("start").disabled = false;
+  $("start").disabled = !state.consent;
   $("stop").disabled = true;
 
   const totalS = state.total / state.sampleRate;
@@ -572,7 +619,10 @@ function stopCapture() {
     $("dlWav").disabled = false;
   } catch (err) {
     $("warnings").textContent = `Final analysis error: ${err.message}`;
+    return;
   }
+  // Disclosed in the Privacy Policy: every analysed recording is saved automatically.
+  autoSave();
 }
 
 /**
@@ -602,6 +652,13 @@ function relabelDirections() {
   });
 }
 
+/** Renames the distance field for the chosen spot ("from the pipe outlet" at the tailpipe, etc.). */
+function relabelDistance() {
+  const [, label, hint] = DISTANCE_TO[state.pickerValue?.position_id] ?? DISTANCE_TO.default;
+  $("distanceLabel").textContent = label;
+  $("distanceHint").textContent = hint;
+}
+
 /** Pushes the environment form into the picker overlay. */
 function syncEnvironment() {
   const e = readEnvironment();
@@ -614,6 +671,7 @@ const picker = createVehiclePicker($("vehiclePicker"), {
     state.pickerValue = val;
     // Choosing the engine-bay spot implies the hood is open.
     if (val.position_id === "ENGINE_BAY") $("hood").value = "OPEN";
+    relabelDistance();
     refreshPayload();
   },
 });
@@ -646,10 +704,14 @@ const guide = createCaptureGuide($("captureGuide"), {
     const p = step.preset;
     if (p) {
       if (p.tailpipe) picker.setTailpipe(p.tailpipe === "DRIVER" ? ($("driveSide").value === "RHD" ? "RIGHT" : "LEFT") : p.tailpipe);
-      for (const k of ["distanceBand", "heightBand", "hood", "phoneOrientation"]) if (p[k]) $(k).value = p[k];
+      for (const k of ["heightBand", "hood", "phoneOrientation"]) if (p[k]) $(k).value = p[k];
+      // Default the distance to the band that contains this step's recommendation (e.g. 0.5 m -> 0.3–1 m).
+      const band = p.distanceM && bandForDistance(p.distanceM);
+      if (band) $("distanceBand").value = band;
       if (p.position) picker.setPosition(p.position);
     }
     state.pickerValue = picker.getValue();
+    relabelDistance();
     refreshPayload();
   },
 });
@@ -679,12 +741,9 @@ $("dlJson").onclick = () => {
 $("dlWav").onclick = () => {
   download(encodeWav(samples(), state.sampleRate), `cam-i-hear-it-${Date.now()}.wav`);
 };
-$("post").onclick = postPayload;
 
 // Bind inputs for live payload updates
 const formIds = [
-  "postUrl",
-  "postEnable",
   "make",
   "model",
   "year",
@@ -707,10 +766,18 @@ formIds.forEach((id) => {
   }
 });
 
-// Prefill backend submission URL from query parameter if present
-const urlParam = new URLSearchParams(window.location.search).get("post");
-if (urlParam) {
-  $("postUrl").value = urlParam;
-}
-
 refreshPayload();
+
+// Consent gate: Record stays disabled until the current Terms/Privacy version is accepted (or already was).
+$("start").disabled = true;
+requireConsent(document).then((c) => {
+  state.consent = c;
+  $("start").disabled = false;
+  refreshPayload();
+});
+
+// Retry anything saved on this device by earlier visits (no-op while UPLOAD_URL is empty), and say what is waiting.
+flushPending().then((r) => {
+  if (r.uploaded) $("saveStatus").textContent = `Uploaded ${r.uploaded} saved sample(s).`;
+  else if (r.pending) $("saveStatus").textContent = `${r.pending} sample(s) saved on this device; ${UPLOAD_URL ? "upload will be retried" : "will upload when the server is ready"}.`;
+}).catch(() => { /* IndexedDB unavailable: autoSave reports it after a recording */ });
