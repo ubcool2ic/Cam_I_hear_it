@@ -2,17 +2,26 @@
  * @file web/app.js
  * @summary Cam_I_hear_it capture page controller. Opens the mic with voice processing off (and shows what the browser
  * actually applied), records via an AudioWorklet, draws a hi-DPI log-frequency spectrogram, runs live (every 2 s, last
- * 8 s) and final analysis with the DSP lib, wires the 360° exterior standing-position picker, noise-environment form and guided capture steps, and builds the
- * JSON payload for download or strictly opt-in POST (audio is never uploaded).
+ * 8 s) and final analysis with the DSP lib, wires the 360° exterior standing-position picker, noise-environment form,
+ * guided capture steps and the metric/imperial display-units toggle (web/units.js), and builds the JSON payload
+ * (always SI, plus capture.display_units) for download or strictly opt-in POST (audio is never uploaded).
  */
 
 import { analyzeClip, FEATURE_SCHEMA } from "./lib/index.js";
 import { createVehiclePicker, seatSideOf } from "./vehicle-picker.js";
 import { createCaptureGuide } from "./capture-guide.js";
+import { loadUnits, saveUnits, applyLengthTemplates } from "./units.js";
 
 /** Upload payload schema version id. */
 /** Upload payload schema. @2: exterior standing position (position_id, side, seatSide, facing), driveSide and environment. */
 const PAYLOAD_SCHEMA = "cam-i-hear-it/upload@2";
+
+/**
+ * SI (metre) ranges behind the distance/height band codes, written into the payload so it never depends on the
+ * user's display units. [min, max]; max null = open-ended. Matches docs/RESEARCH_ACOUSTICS.md §10.2.
+ */
+const DISTANCE_BAND_M = { NEAR: [0, 0.3], MID: [0.3, 1], FAR: [1, 3], VERY_FAR: [3, null] };
+const HEIGHT_BAND_M = { GROUND: [0, 0], LOW: [0, 0.5], MID: [0.5, 1.2], HIGH: [1.2, null] };
 
 /** Rolling window length (seconds) for live background analysis. */
 const LIVE_WINDOW_S = 8;
@@ -54,6 +63,8 @@ const state = {
   pickerValue: null,
   /** The current guide step's recommended position id (null for free steps). */
   recommendedPosition: null,
+  /** Display units for shown lengths ("metric" | "imperial"); display only, the payload stays in metres. */
+  displayUnits: loadUnits(),
 };
 
 /**
@@ -251,6 +262,8 @@ function buildPayload() {
       recommendedPosition: state.recommendedPosition,
       followedRecommendation: state.recommendedPosition ? state.recommendedPosition === state.pickerValue.position_id : null,
       driveSide: val("driveSide"),
+      // Display preference only: every length in this payload is SI (metres).
+      display_units: state.displayUnits,
       // LEFT/RIGHT are vehicle-frame (driver's-seat view); seatSide maps them to DRIVER/PASSENGER via driveSide.
       sideConvention: "vehicle-frame",
       position: {
@@ -261,7 +274,9 @@ function buildPayload() {
         tailpipe: state.pickerValue.tailpipe,
         facing: state.pickerValue.facing,
         distanceBand: val("distanceBand"),
+        distanceRangeM: DISTANCE_BAND_M[val("distanceBand")] ?? null,
         heightBand: val("heightBand"),
+        heightRangeM: HEIGHT_BAND_M[val("heightBand")] ?? null,
         hood: val("hood"),
         phoneOrientation: val("phoneOrientation"),
         notes: val("positionNotes") || null,
@@ -604,7 +619,27 @@ const picker = createVehiclePicker($("vehiclePicker"), {
 });
 state.pickerValue = picker.getValue();
 
-createCaptureGuide($("captureGuide"), {
+/**
+ * Applies a display-unit choice: re-renders every length label, the guide text and the toggle state, saves it, and
+ * refreshes the payload's display_units field.
+ * @param {"metric"|"imperial"} units
+ * @param {{save?: boolean}} [opts] save=false on startup so the default is not pinned before the user chooses.
+ */
+function setDisplayUnits(units, { save = true } = {}) {
+  state.displayUnits = units;
+  if (save) saveUnits(units);
+  applyLengthTemplates(document, units);
+  guide?.setUnits(units);
+  document.querySelectorAll(".units-toggle [data-units]").forEach((b) => {
+    const on = b.dataset.units === units;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-pressed", String(on));
+  });
+  refreshPayload();
+}
+
+const guide = createCaptureGuide($("captureGuide"), {
+  units: state.displayUnits,
   onStep(step) {
     state.currentGuideStep = step.id;
     state.recommendedPosition = step.preset?.position ?? null;
@@ -630,6 +665,10 @@ for (const id of ["envSetting", "wallSide", "wind", "noiseDirection", "noiseKind
   $(id).addEventListener("change", () => { syncEnvironment(); refreshPayload(); });
 }
 relabelDirections();
+
+// Display units: wire the header toggle and render all lengths in the saved/default units.
+document.querySelectorAll(".units-toggle [data-units]").forEach((b) => b.addEventListener("click", () => setDisplayUnits(b.dataset.units)));
+setDisplayUnits(state.displayUnits, { save: false });
 
 // Bind recording and download actions
 $("start").onclick = startCapture;

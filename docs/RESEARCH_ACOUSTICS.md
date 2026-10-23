@@ -172,6 +172,7 @@ Payload (`cam-i-hear-it/upload@2`, `capture` block):
   "sideConvention": "vehicle-frame",
   "recommendedPosition": "TAILPIPE",
   "followedRecommendation": true,
+  "display_units": "imperial",
   "position": {
     "position_id": "TAILPIPE",
     "ring": true,
@@ -180,7 +181,9 @@ Payload (`cam-i-hear-it/upload@2`, `capture` block):
     "tailpipe": "LEFT",
     "facing": { "target": "TAILPIPE_OUTLET", "bearingDeg": 18 },
     "distanceBand": "MID",
+    "distanceRangeM": [0.3, 1],
     "heightBand": "LOW",
+    "heightRangeM": [0, 0.5],
     "hood": "CLOSED",
     "phoneOrientation": "MIC_TOWARD_SOURCE",
     "notes": null
@@ -195,7 +198,7 @@ Payload (`cam-i-hear-it/upload@2`, `capture` block):
 }
 ```
 
-`facing.bearingDeg` is the direction the user faces, in the vehicle frame: 0° = toward the nose, 90° = toward vehicle RIGHT. It is null for the engine bay, where the user looks down. `tailpipe` is the outlet the user stands at: `LEFT`, `RIGHT`, `CENTER`, or `DUAL` (standing between two outlets). All environment fields are optional (null = not given).
+`facing.bearingDeg` is the direction the user faces, in the vehicle frame: 0° = toward the nose, 90° = toward vehicle RIGHT. It is null for the engine bay, where the user looks down. `tailpipe` is the outlet the user stands at: `LEFT`, `RIGHT`, `CENTER`, or `DUAL` (standing between two outlets). All environment fields are optional (null = not given). Lengths are always in SI. `distanceRangeM`/`heightRangeM` give the band as `[min, max]` metres (`null` max = open-ended). `display_units` (`metric`/`imperial`) only records which units the user saw; it does not change any value. These fields are additive, so the schema stays `upload@2`.
 
 **10.1 What each exterior position is good and bad for.** This is our synthesis of §4, §7 and §9.2–9.5 and should be validated with Tyler's labelled clips.
 

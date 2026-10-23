@@ -13,6 +13,14 @@
     <header class="app-header">
       <h1>Cam_I_hear_it</h1>
       <p class="subtitle">Vehicle engine idle acoustic recorder &amp; analyser</p>
+      <!-- Display units for every shown length (web/units.js); saved in localStorage. Payload stays in metres. -->
+      <div class="units-toggle" role="group" aria-label="Display units">
+        <span class="units-label">Units</span>
+        <div class="seg-buttons">
+          <button type="button" class="seg-btn" id="unitsMetric" data-units="metric" aria-pressed="false">Metric (m, cm)</button>
+          <button type="button" class="seg-btn" id="unitsImperial" data-units="imperial" aria-pressed="false">Imperial (ft, in)</button>
+        </div>
+      </div>
     </header>
 
     <!-- Guided Capture Walkthrough -->
@@ -122,10 +130,10 @@
         <label class="field">
           <span class="field-label">Distance to the car / source</span>
           <select id="distanceBand">
-            <option value="NEAR">Near (&le; 0.3 m)</option>
-            <option value="MID" selected>Mid (0.3&ndash;1 m; tailpipe 0.5 m)</option>
-            <option value="FAR">Far (1&ndash;3 m)</option>
-            <option value="VERY_FAR">Very far (&gt; 3 m)</option>
+            <option value="NEAR" data-len="Near (&le; {0.3})">Near (&le; 0.3 m)</option>
+            <option value="MID" selected data-len="Mid ({0.3-1}; tailpipe {0.5})">Mid (0.3&ndash;1 m; tailpipe 0.5 m)</option>
+            <option value="FAR" data-len="Far ({1-3})">Far (1&ndash;3 m)</option>
+            <option value="VERY_FAR" data-len="Very far (&gt; {3})">Very far (&gt; 3 m)</option>
           </select>
         </label>
         <label class="field">
@@ -149,9 +157,9 @@
           <span class="field-label">Phone height</span>
           <select id="heightBand">
             <option value="GROUND">On the ground</option>
-            <option value="LOW" selected>Low (&lt; 0.5 m, pipe height)</option>
-            <option value="MID">Mid (0.5&ndash;1.2 m, waist)</option>
-            <option value="HIGH">High (&gt; 1.2 m, chest+)</option>
+            <option value="LOW" selected data-len="Low (&lt; {0.5}, pipe height)">Low (&lt; 0.5 m, pipe height)</option>
+            <option value="MID" data-len="Mid ({0.5-1.2}, waist)">Mid (0.5&ndash;1.2 m, waist)</option>
+            <option value="HIGH" data-len="High (&gt; {1.2}, chest+)">High (&gt; 1.2 m, chest+)</option>
           </select>
         </label>
         <label class="field">
@@ -165,7 +173,7 @@
 
       <label class="field field-full">
         <span class="field-label">Position notes (optional)</span>
-        <input id="positionNotes" type="text" placeholder="e.g. 45&deg; off the driver tip, kneeling">
+        <input id="positionNotes" type="text" placeholder="e.g. 45&deg; off the driver tip, 0.5 m away, kneeling" data-len="e.g. 45&deg; off the driver tip, {0.5} away, kneeling" data-len-attr="placeholder">
       </label>
     </fieldset>
 

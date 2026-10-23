@@ -689,3 +689,22 @@ textarea {
   font-size: 0.85rem;
   padding: 0 8px;
 }
+
+/* Display-units toggle in the header (web/units.js) */
+.units-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.units-label {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted, #94a3b8);
+}
+
+.units-toggle .seg-buttons {
+  justify-content: flex-start;
+}
