@@ -1,6 +1,15 @@
 <!-- File: docs/PLAN.md | Roadmap, feasibility, and platform decision for Cam_I_hear_it -->
 # Cam_I_hear_it: Project Plan
 
+## Project map
+| What | Where |
+|---|---|
+| Acoustics research (cited): firing math, lope, knock, phone limits, distance/position, 360° zone scheme | [docs/RESEARCH_ACOUSTICS.md](RESEARCH_ACOUSTICS.md) |
+| DSP library (TypeScript, browser + Node): RPM, cylinder hypotheses, lope score, features JSON | [lib/](../lib/README.md) |
+| Static capture page (mic, spectrogram, vehicle + mods form, payload) | [web/](../web/README.md) |
+| ML backend design (FastAPI, dataset schema, Macchina ground truth, models) | [docs/ML_BACKEND.md](ML_BACKEND.md) · [backend/](../backend/README.md) |
+| Multi-sensor hardware design | [docs/HARDWARE.md](HARDWARE.md) |
+
 ## 1. What sound can and can't tell us
 
 | Target | Feasibility | How |
@@ -19,10 +28,10 @@
 **Recommendation: webpage first (iPhone mic), custom hardware later as an optional pro add-on.**
 
 ### Webpage / PWA (Phase 1)
-- getUserMedia with `echoCancellation`, `noiseSuppression`, and `autoGainControl` all off, at 48 kHz. Safari honors most of these; verify on a real iPhone.
+- getUserMedia with `echoCancellation`, `noiseSuppression`, and `autoGainControl` all requested off, at 48 kHz. **Research update:** iOS Safari may honour only `echoCancellation` (WebKit bug 311451, caniuse), so the app logs `track.getSettings()` in every payload and relies on timing/ratio features. Verify on a real iPhone ([RESEARCH_ACOUSTICS §7](RESEARCH_ACOUSTICS.md#7-phone-microphone-limits)).
 - DSP runs in the browser (an AudioWorklet plus WASM/JS FFT), so it works offline and costs nothing per scan.
 - A guided capture flow: tailpipe 30 s, then hood open 30 s, then a blip to 2,000 rpm.
-- Pros: zero hardware, instant to share. Cons: phone mic roll-off below ~80 Hz, unknown placement, and ambient noise.
+- Pros: zero hardware, instant to share. Cons: phone mic roll-off (about −3 dB at 50 Hz, −12 to −15 dB at 20 Hz per Faber Acoustical), placement variation, and ambient noise.
 
 ### Custom hardware (Phase 3, optional)
 - A piezo contact mic or MEMS accelerometer on the block or valve cover, plus a measurement mic, using an ESP32-S3 or Pi with an I2S ADC.
@@ -38,5 +47,6 @@
 
 ## 4. Open decisions
 - Public product or personal tool?
-- Hosting for the web app (GitHub Pages is free).
+- Hosting for the web app. GitHub Pages is free for public repos, but a private repo needs a paid plan. Pages can serve only the repo root or `/docs` unless an Actions workflow publishes `web/`.
 - Dataset privacy and storage.
+- **360° position picker:** replace the capture-position dropdown with a tap-to-place top-down vehicle outline that writes the zone, distance, height, hood and phone-orientation labels defined in [RESEARCH_ACOUSTICS §10](RESEARCH_ACOUSTICS.md#10-position-labeling-scheme-for-the-360-vehicle-outline-picker).
