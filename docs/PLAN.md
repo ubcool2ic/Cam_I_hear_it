@@ -4,7 +4,10 @@
 ## Project map
 | What | Where |
 |---|---|
-| Acoustics research (cited): firing math, lope, knock, phone limits, distance/position, 360° zone scheme | [docs/RESEARCH_ACOUSTICS.md](RESEARCH_ACOUSTICS.md) |
+| Acoustics research (cited): firing math, lope, knock, phone limits, distance/position, exterior position + noise environment scheme | [docs/RESEARCH_ACOUSTICS.md](RESEARCH_ACOUSTICS.md) |
+| DSP library (TypeScript): RPM, cylinder hypotheses, lope, features | [lib/](../lib/README.md) |
+| Capture website (static, iPhone-first). Run locally with `npx serve web` | [web/](../web/README.md) |
+| OpenRouter spend log for model-assisted coding | [docs/SPEND.md](SPEND.md) |
 
 ## 1. What sound can and can't tell us
 
@@ -45,4 +48,4 @@
 - Public product or personal tool?
 - Hosting for the web app. GitHub Pages is free for public repos, but a private repo needs a paid plan. Pages can serve only the repo root or `/docs` unless an Actions workflow publishes `web/`.
 - Dataset privacy and storage.
-- **360° position picker:** replace the capture-position dropdown with a tap-to-place top-down vehicle outline that writes the zone, distance, height, hood and phone-orientation labels defined in [RESEARCH_ACOUSTICS §10](RESEARCH_ACOUSTICS.md#10-position-labeling-scheme-for-the-360-vehicle-outline-picker).
+- **Exterior position picker (in PR #1):** a top-down outline with a ring of tappable spots around the outside of the car (driver/passenger via LHD/RHD), a separate engine-bay spot, and an optional noise-environment form. Fields and the noise-compensation plan are in [RESEARCH_ACOUSTICS §10](RESEARCH_ACOUSTICS.md#10-exterior-standing-position-and-noise-environment-website-picker). Open: when to implement §10.4 compensation in lib/.
