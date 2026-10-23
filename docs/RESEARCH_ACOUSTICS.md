@@ -13,7 +13,7 @@ Contents
 7. Phone microphone limits (iPhone roll-off, AGC, Safari constraints)
 8. Ambient noise and wind
 9. Sound vs. distance and microphone position (front, sides, tailpipe)
-10. Position labeling scheme for the 360° vehicle outline picker
+10. Exterior standing position and noise environment (website picker)
 11. Multi-mic, contact mic and accelerometer approaches; band choices
 12. Prior work: papers, apps and datasets
 13. What this means for Cam_I_hear_it
@@ -158,61 +158,78 @@ Avoid absolute level, single-bin levels and anything measured across different p
 
 Record a "warm or cold" flag for every capture, because leaks and ticks change as parts expand (§6).
 
-## 10. Position labeling scheme for the 360° vehicle outline picker
+## 10. Exterior standing position and noise environment (website picker)
 
-The website will show a top-down vehicle outline, and the user taps where they recorded. To keep this tied to the acoustics in §9, every clip carries a structured `position` object:
+The website shows a top-down outline of the car (nose up) with a **ring of tappable spots around the outside**. The user taps where they are standing. The engine bay (hood open) is a separate, optional spot inside the outline. An arrow shows which way they face. The guide (§9.8) *recommends* a spot for each step: tailpipe first, then the engine bay, then optional front corners. The user can still pick **any** ring spot, and the payload records both the pick and the recommendation.
+
+**Side convention.** `side` is in the **vehicle frame**: LEFT/RIGHT as seen from the driver's seat facing forward. This is physical, so it stays tied to the exhaust bank and pipe (§2) regardless of market. The UI labels spots Driver/Passenger, and `driveSide` (`LHD` = driver on the left, `RHD` = driver on the right) maps between the two. The payload stores both `side` and `seatSide` (`DRIVER`/`PASSENGER`/`CENTER`).
+
+Payload (`cam-i-hear-it/upload@2`, `capture` block):
 
 ```json
 {
-  "zone": "ENGINE_BAY_LEFT",
-  "distanceBand": "NEAR",
-  "hood": "OPEN",
-  "heightBand": "MID",
-  "phoneOrientation": "MIC_TOWARD_SOURCE",
-  "tapXY": [0.31, 0.12],
-  "side": "LEFT",
-  "notes": "over driver valve cover"
+  "driveSide": "LHD",
+  "sideConvention": "vehicle-frame",
+  "recommendedPosition": "TAILPIPE",
+  "followedRecommendation": true,
+  "position": {
+    "position_id": "TAILPIPE",
+    "ring": true,
+    "side": "LEFT",
+    "seatSide": "DRIVER",
+    "tailpipe": "LEFT",
+    "facing": { "target": "TAILPIPE_OUTLET", "bearingDeg": 18 },
+    "distanceBand": "MID",
+    "heightBand": "LOW",
+    "hood": "CLOSED",
+    "phoneOrientation": "MIC_TOWARD_SOURCE",
+    "notes": null
+  },
+  "environment": {
+    "setting": "OUTDOOR_OPEN_LOT",
+    "wallSide": "RIGHT",
+    "wallSeatSide": "PASSENGER",
+    "wind": "LIGHT",
+    "noise": { "direction": "REAR", "seatSide": null, "kind": "TRAFFIC" }
+  }
 }
 ```
 
-**Zones** (top-down, driver side = LEFT for LHD vehicles; the app should ask about RHD):
+`facing.bearingDeg` is the direction the user faces, in the vehicle frame: 0° = toward the nose, 90° = toward vehicle RIGHT. It is null for the engine bay, where the user looks down. `tailpipe` is the outlet the user stands at: `LEFT`, `RIGHT`, `CENTER`, or `DUAL` (standing between two outlets). All environment fields are optional (null = not given).
 
-| Zone code | Where | Primary sources heard | Best supports |
-|---|---|---|---|
-| `GRILLE` | In front of the grille | Fan, belts, radiated block (hood closed) | Screening only |
-| `ENGINE_BAY_CENTER` | Over intake / throttle body | Intake pulsation, injector tick, valvetrain | Tick, intake, RPM (secondary) |
-| `ENGINE_BAY_LEFT` / `ENGINE_BAY_RIGHT` | Over each valve cover or bank | That bank's valvetrain, manifold joint | Lifter tick localisation, manifold leak per bank |
-| `ENGINE_BAY_LOW` | Down at the oil pan / lower block (or contact) | Bottom end | Rod knock (prefer contact sensor) |
-| `FRONT_WHEEL_LEFT` / `FRONT_WHEEL_RIGHT` | Outside the front wheel well | Manifold, downpipe | Leaks, bank comparison |
-| `REAR_WHEEL_LEFT` / `REAR_WHEEL_RIGHT` | Outside the rear wheel well | Mid-pipe and muffler shell | Backup exhaust timing |
-| `REAR_BUMPER` | Centre rear, not at a pipe | Mixed exhaust plus body | Backup |
-| `TAILPIPE_LEFT` / `TAILPIPE_RIGHT` / `TAILPIPE_CENTER` | At an outlet, 45° off-axis | Exhaust pulse train | **RPM, lope, bank pattern, misfire** |
-| `CABIN` | Inside the car | Firewall-filtered sound | Not recommended |
+**10.1 What each exterior position is good and bad for.** This is our synthesis of §4, §7 and §9.2–9.5 and should be validated with Tyler's labelled clips.
 
-**Distance bands** (relative to the nearest surface of the source):
-- `CONTACT` (touching; hardware only)
-- `NEAR` (≤ 0.3 m, engine-bay near field, §9.3)
-- `MID` (0.3–1 m, the standard tailpipe 0.5 m sits here)
-- `FAR` (1–3 m)
-- `VERY_FAR` (> 3 m: reflections and ambient dominate, §9.2/9.4)
+| `position_id` | Near which source | Body shadowing / path | Good for | Bad for |
+|---|---|---|---|---|
+| `TAILPIPE` (0.5 m, 45°, §4 GRAS practice) | Exhaust outlet (closest to the exhaust) | Direct line to the outlet; nothing in the way | **RPM, lope, misfire, bank pattern** (one pipe hears one bank on a cross-plane V8, §2) | Valvetrain tick, intake; muffler sets the timbre (§4) |
+| `REAR_CENTER` (trunk) | Between outlets / behind the muffler | Bumper and fascia partly shield the pipes | Backup timing when you can't reach a pipe; `DUAL` cars | Per-bank attribution; the engine is ~body-length away and shadowed |
+| `REAR_LEFT_CORNER` / `REAR_RIGHT_CORNER` | That side's pipe/muffler shell | The rear wheel and quarter panel shadow the far side | Backup exhaust timing, side-specific muffler noise | Engine-bay faults; timbre varies strongly with exact spot (near field, §9.3) |
+| `LEFT_REAR_DOOR` / `RIGHT_REAR_DOOR` | Mid-pipe under the floor | Floor pan and body block most direct paths; ground reflections dominate (§9.4) | Mid-pipe leaks on that side | Almost everything else: neither near the engine nor the outlet |
+| `LEFT_FRONT_DOOR` / `RIGHT_FRONT_DOOR` | Behind the front wheel: downpipe, rear of that bank | Fender and front wheel partly shadow the bay | That bank's downpipe/collector leaks; bank comparison | Firing-pulse timing (weaker than tailpipe), timbre comparisons with other spots |
+| `FRONT_LEFT_CORNER` / `FRONT_RIGHT_CORNER` | That bank's manifold and lower block (front wheel well, §9.5) | Bumper and wheel shield the top of the engine; the far bank is shadowed by the block | **Manifold leaks per bank, L/R bank comparison** (recommended optional step) | RPM if the hood is closed and fan is loud |
+| `FRONT_CENTER` (grille) | Fan, belts, front of block | Hood (if closed) shields the top; fan noise masks | Quick screen, belt/pulley noise | Exhaust timing and lope; detailed fault work (§9.5: screening only) |
+| `ENGINE_BAY` (hood open, 20–40 cm, not on the ring) | Valve covers, intake, injectors (closest to the engine) | Direct, near field (§9.3) | **Lifter/valvetrain tick, intake, injector tick**, manifold-to-head leak | Repeatable timbre (small moves change spectrum, §9.3); exhaust lope |
 
-**Height bands:** `GROUND` (on the ground plane, removes the comb, §9.4), `LOW` (< 0.5 m), `MID` (0.5–1.2 m) and `HIGH` (> 1.2 m).
+The phone's own body also shadows high frequencies (§7). `phoneOrientation` = `MIC_TOWARD_SOURCE` remains the default, and `facing` lets us check that the user faced the source the position implies.
 
-**Hood:** `OPEN`, `CLOSED` or `NA` (rear zones).
+**10.2 Bands kept from the earlier scheme.**
+- **Distance** (to the nearest surface of the source): `NEAR` ≤ 0.3 m (§9.3 near field), `MID` 0.3–1 m (tailpipe 0.5 m), `FAR` 1–3 m, `VERY_FAR` > 3 m (reflections and ambient dominate, §9.2/9.4).
+- **Height:** `GROUND`, `LOW` < 0.5 m, `MID` 0.5–1.2 m, `HIGH` > 1.2 m. Height sets the ground-reflection comb (§9.4).
+- **Hood:** `OPEN`, `CLOSED`, `NA`. Choosing the engine-bay spot sets `OPEN`.
+- **Phone orientation:** `MIC_TOWARD_SOURCE` (default), `MIC_AWAY`, `FLAT_FACE_UP`, `UNKNOWN`.
 
-**Phone orientation:**
-- `MIC_TOWARD_SOURCE`, with the bottom edge pointing at the source. The phone body shadows high frequencies, §7, so this is the default.
-- `MIC_AWAY`
-- `FLAT_FACE_UP`
-- `UNKNOWN`
+**10.3 Noise environment fields.** `setting`: `INDOOR_GARAGE`, `COVERED_CARPORT`, `OUTDOOR_OPEN_LOT`, `OUTDOOR_DRIVEWAY_STREET`, `OTHER`. `wallSide` (nearby wall/building) and `noise.direction` (traffic or other noise) are `FRONT`, `REAR`, `LEFT`, `RIGHT` (vehicle frame, shown as Driver/Passenger) or, for noise, `ALL_AROUND`. `noise.kind`: `TRAFFIC`, `OTHER_ENGINE`, `PEOPLE`, `MACHINERY_HVAC`, `OTHER`. `wind`: `NONE`, `LIGHT`, `STRONG`.
 
-The app should show an iPhone silhouette with the bottom mic highlighted.
+**10.4 How position + environment will drive noise compensation (plan, not yet implemented in lib/).**
+1. **Group by position class.** Timbre features (centroid, flatness, cepstral envelope, band shares) are compared only within the same `position_id` (or front/rear class) and distance band, because shadowing and path change spectral shape (§9.5, §9.7). Timing features (RPM, lope, inter-pulse CV) may be pooled across positions, as now.
+2. **Engine-off noise profile at the same spot.** When the user adds an engine-off clip at the same position, subtract its stationary spectrum (Boll 1979 spectral subtraction, §8). This helps HVAC/road hum; it cannot remove other engines or voices, so `noise.kind` = `OTHER_ENGINE`/`PEOPLE` lowers confidence instead.
+3. **Order-locked measurement first.** Measure only at engine-order bins (§8), which rejects broadband traffic and wind. Where the user reports noise, keep order-locked features and down-weight broadband ones (band shares, flatness).
+4. **Wind.** `wind` = `LIGHT`/`STRONG` turns on the low-frequency wind check (§8: non-stationary energy below ~100 Hz not locked to engine orders; POMA 2020, JASA 10.1121/1.2832329, Knowles AN29). Strong wind marks low-band features unreliable and the app asks the user to shield the phone or move to the lee side. `facing` and the reported side tell us which side the lee is.
+5. **Noise direction vs where the user stands.** Using `noise.direction` and `facing.bearingDeg`, we know whether the noise is in front of the mic, behind the user, or on the far side of the car. Noise from the far side is partly shadowed by the body (§9.2: directivity and shielding dominate over air absorption); noise in the mic's look direction is not. Clips with noise on the mic's side and in front of it get lower confidence, and the app can suggest the ring spot on the opposite side (for example, traffic behind → use a front corner or the engine bay rather than the tailpipe).
+6. **Walls and garages.** `wallSide` or `INDOOR_GARAGE` predicts strong reflections and comb notches (§9.4: concrete and garage walls are strong reflectors). We rely on features averaged across many orders, never single narrow-band levels, and flag clips where the user stands between the car and a wall. Open-lot clips are the cleaner reference for timbre baselines.
+7. **Shadowing check.** If the measured high-band share is far below the class median for that `position_id`, suspect the phone or body is shadowing the mic (§7, §9.2), and ask to re-record with `MIC_TOWARD_SOURCE`.
 
-**Rules the ML backend should apply:**
-- Train and compare **within a zone class**: FRONT (engine bay, grille, front wheel) vs REAR (tailpipe, rear bumper, rear wheel).
-- Treat `tapXY` as a continuous feature only once there is enough data.
-- Timing features (RPM, lope) are allowed from any zone.
-- Timbre features are compared only within the same zone and distance band.
+All thresholds here are **assumptions to tune** on labelled data. No new external sources were added for this section; it reuses §2, §4, §7, §8 and §9.
 
 ## 11. Multi-mic, contact mic and accelerometer approaches; band choices
 
@@ -263,7 +280,7 @@ The app should show an iPhone silhouette with the bottom mic highlighted.
 2. **Treat cylinder count as a hypothesis.** f_fire alone is ambiguous (§1). Score (N, RPM) pairs using firing harmonics, **half-order (cycle-rate) evidence** and an idle-RPM prior, and let the user's form input override.
 3. **Build lope as a sound-domain COV.** Use cycle-to-cycle CV of pulse timing and amplitude (§3). Call it a *score*, not a cam spec. It also responds to compression, tune and vacuum leaks.
 4. **Assume AGC may be on (Safari).** Request processing off, log `getSettings()`, and prefer timing and ratio features (§7).
-5. **Use position-aware, distance-robust features.** Timing and order ratios work from anywhere. Timbre and fault features are only compared within a zone (§9–10). A standard tailpipe position (0.5 m, 45°) and a standard hood-open position make the dataset consistent.
+5. **Use position-aware, distance-robust features.** Timing and order ratios work from anywhere. Timbre and fault features are only compared within a position class (§9–10). A standard tailpipe position (0.5 m, 45°) and a standard hood-open position make the dataset consistent.
 6. **Record an engine-off noise profile** for spectral subtraction, and flag wind (§8).
 7. **Report knock as not testable at idle.** Real knock detection needs a block sensor at 5–15 kHz and a load test (§5).
 8. **Collect our own data at 48 kHz with OBD ground truth (Macchina M2).** Public and YouTube data generalise badly, with cylinder-count accuracy collapsing from 72.8% to 18.4% on YouTube (§12). Synthetic data with RPM labels (CC BY-NC) is fine for development only.

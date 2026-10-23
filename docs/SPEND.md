@@ -17,3 +17,7 @@
 
 Per-call cost is OpenRouter's `usage.cost` from each response. Neither fallback model was needed.
 The DSP fix (the browser vs offline lope mismatch) was written by hand, without a model.
+
+### Round 2: exterior position picker rework (2026-10-23)
+
+No OpenRouter calls. The picker, environment form, guide, payload `upload@2` and the §10 note were written by hand. Key usage checked at 02:58 EDT: **137.775719**, unchanged, so the delta for this round is **$0.00**. Cumulative for this repo stays at **$0.148175** (4.9% of the $3.00 cap).

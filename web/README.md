@@ -21,11 +21,11 @@ To try it **on an iPhone**, the page must be served over HTTPS; plain http on a 
 
 | File | What it does |
 |---|---|
-| `index.html` | Markup: guided capture card, live dashboard, vehicle form, position picker + bands, mic-settings table, opt-in upload, payload viewer, sticky record bar |
+| `index.html` | Markup: guided capture card, live dashboard, vehicle form, LHD/RHD + exterior position picker + bands, optional noise-environment form, mic-settings table, opt-in upload, payload viewer, sticky record bar |
 | `style.css` | Dark, mobile-first styles (safe-area insets, 44 px tap targets) |
 | `app.js` | Mic capture (voice processing off), live spectrogram, live and final analysis, payload, downloads, opt-in POST |
-| `vehicle-picker.js` | Top-down 360° SVG outline. Tap a zone (docs/RESEARCH_ACOUSTICS.md §10 codes) to get `{zone, side, tapXY}`; RHD relabels driver/passenger |
-| `capture-guide.js` | Guided steps: tailpipe 0.5 m at 45°, then hood-open 20–40 cm over the engine, then free capture. Each step presets the position fields |
+| `vehicle-picker.js` | Top-down SVG car outline (nose up) with a ring of 11 exterior standing spots (front centre, front corners, driver/passenger front and rear doors, rear corners, trunk, tailpipe with driver/passenger/centre/dual outlet) plus a separate engine-bay (hood open) spot. Draws a facing arrow and the noise-environment overlay. Returns `{position_id, ring, side, seatSide, tailpipe, facing, label}` (docs/RESEARCH_ACOUSTICS.md §10) |
+| `capture-guide.js` | Guided steps: tailpipe 0.5 m at 45°, then hood-open 20–40 cm over the engine, then an optional walk-around. Each step *recommends* a position and presets it; any ring spot can still be tapped |
 | `recorder-worklet.js` | AudioWorklet that forwards raw mic samples to the main thread |
 
 ## Behaviour notes
@@ -33,4 +33,5 @@ To try it **on an iPhone**, the page must be served over HTTPS; plain http on a 
 - **Readout:** RPM, cylinder guess with confidence, lope score (0–100; the words smooth/mild/noticeable/heavy are provisional and uncalibrated), and a Knock card that always reads "Not testable at idle". Spark knock needs load (docs/PLAN.md §1).
 - **Live analysis:** every 2 s on the last 8 s of audio. The first 1 s after Start is skipped (startup transient). The final analysis on Stop uses the whole clip minus that first second.
 - **Mic processing:** `echoCancellation`, `noiseSuppression` and `autoGainControl` are requested `false`. The page shows what `track.getSettings()` reports was actually applied, and stores that in the payload as `device.trackSettings`, minus `deviceId`/`groupId`. iOS Safari may ignore some of these (docs/RESEARCH_ACOUSTICS.md §7).
-- **Upload:** off by default. The POST button only enables after a clip is analysed, an http(s) URL is entered (or passed as `?post=https://…`), **and** the opt-in box is ticked. Only JSON goes up (features, vehicle, capture position, device settings); **audio is never uploaded**. Use **WAV** to keep raw audio locally.
+- **Position and environment:** `side` is vehicle-frame (LEFT/RIGHT from the driver's seat); `seatSide` gives DRIVER/PASSENGER from the LHD/RHD setting. The payload (`cam-i-hear-it/upload@2`) stores `capture.position` (position_id, side, seatSide, tailpipe outlet, facing, distance, height, hood, phone orientation), `capture.environment` (setting, wall side, wind, noise direction and kind) and the guide's recommended position. Analysis does not use the environment yet (plan: docs/RESEARCH_ACOUSTICS.md §10.4).
+- **Upload:** off by default. The POST button only enables after a clip is analysed, an http(s) URL is entered (or passed as `?post=https://…`), **and** the opt-in box is ticked. Only JSON goes up (features, vehicle, capture position and environment, device settings); **audio is never uploaded**. Use **WAV** to keep raw audio locally.
