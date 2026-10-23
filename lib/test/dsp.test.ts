@@ -123,3 +123,14 @@ test("48 kHz input (phone rate) is decimated and analysed correctly", () => {
   assert.ok(Math.abs(fv.rpm.estimate - 750) < 10, `rpm ${fv.rpm.estimate}`);
   assert.equal(fv.sampleRate, 48000);
 });
+
+test("lope and pulse RPM agree between 44.1 kHz and 48 kHz input (browser-vs-offline regression)", () => {
+  // Chrome often delivers 44.1 kHz, which decimates to 2004.5 Hz, so the 20 ms firing period is not an integer
+  // number of samples. Before sub-sample peak refinement, that quantisation alone inflated lope by ~7 points.
+  const opts = { durationS: 10, rpm: 750, cylinders: 8, ampPattern: [1, 0.8, 1.1, 0.9, 1.05, 0.85, 1, 0.95], ampJitter: 0.05, noise: 0.02, seed: 5 };
+  const a = analyzeClip(synthEngine({ ...opts, sampleRate: 48000 }), 48000);
+  const b = analyzeClip(synthEngine({ ...opts, sampleRate: 44100 }), 44100);
+  assert.ok(Math.abs(a.lope.score - b.lope.score) < 3, `lope 48k ${a.lope.score} vs 44.1k ${b.lope.score}`);
+  assert.ok(b.lope.intervalCov < 0.003, `interval CV at 44.1k ${b.lope.intervalCov}`);
+  assert.ok(!b.warnings.some((w) => w.includes("pulse-timing")), b.warnings.join("|"));
+});

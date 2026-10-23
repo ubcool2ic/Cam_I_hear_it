@@ -35,7 +35,15 @@ export function detectPulses(x: ArrayLike<number>, sampleRate: number, firingHz:
     if (v <= thr) continue;
     let isMax = true;
     for (let j = i - half; j <= i + half; j++) if (env[j] > v || (env[j] === v && j < i)) { isMax = false; break; }
-    if (isMax) pulses.push({ t: i / sampleRate, a: v });
+    if (isMax) {
+      // Sub-sample peak refinement (parabolic fit through i-1, i, i+1). Without it, peak times are quantised to the
+      // analysis sample period (~0.5 ms at ~2 kHz). When the firing period is not an integer number of samples
+      // (e.g. 44.1 kHz input decimated by 22 -> 2004.5 Hz), that quantisation alone adds ~0.7% interval CV, which
+      // the x12 weighting turns into ~+7 lope points. This was the main cause of the browser-vs-offline mismatch.
+      const y0 = env[i - 1], y2 = env[i + 1], den = y0 - 2 * v + y2;
+      const d = den < 0 ? Math.max(-0.5, Math.min(0.5, (0.5 * (y0 - y2)) / den)) : 0;
+      pulses.push({ t: (i + d) / sampleRate, a: v - 0.25 * (y0 - y2) * d });
+    }
   }
   return pulses;
 }
@@ -54,7 +62,7 @@ export interface LopeResult {
   eventsPerCycle: number;
   /** Number of complete cycles analysed. */
   cycles: number;
-  /** RPM from median cycle duration (NaN if too few pulses). */
+  /** RPM from the median inter-pulse interval times eventsPerCycle (robust to a few missed/extra pulses; NaN if too few pulses). */
   rpmFromPulses: number;
 }
 
@@ -97,8 +105,12 @@ export function lopeScore(pulses: Pulse[], cycleHz: number, eventsPerCycle?: num
   const intervalCov = slotIntervals.reduce((a, v) => a + cv(v), 0) / E;
   const ampCov = slotAmps.reduce((a, v) => a + cv(v), 0) / E;
   const cycleCov = cv(cycleDur);
-  const sortedD = [...cycleDur].sort((a, b) => a - b);
-  const medD = sortedD[sortedD.length >> 1];
+  // Median single interval is robust to an occasional missed or doubled pulse, which would otherwise shift the
+  // slotting and make whole-cycle durations (and so pulse RPM) wrong.
+  const iv: number[] = [];
+  for (let i = 1; i < pulses.length; i++) iv.push(pulses[i].t - pulses[i - 1].t);
+  iv.sort((a, b) => a - b);
+  const medD = iv[iv.length >> 1] * E;
   const x = 12 * intervalCov + 3 * ampCov;
   return { score: 100 * (1 - Math.exp(-x)), intervalCov, cycleCov, ampCov, eventsPerCycle: E, cycles, rpmFromPulses: 120 / medD };
 }
