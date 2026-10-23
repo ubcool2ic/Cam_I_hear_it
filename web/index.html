@@ -1,84 +1,249 @@
 <!doctype html>
-<!-- File: web/index.html | Cam_I_hear_it static capture page: mic recording, live spectrogram, RPM/lope readout, vehicle form, JSON payload -->
+<!-- File: web/index.html | Cam_I_hear_it idle capture interface with 360 vehicle picker, guided capture flow, live spectrogram, and acoustic analysis -->
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Cam_I_hear_it: idle capture</title>
-<style>
-  :root { color-scheme: dark; font-family: system-ui, sans-serif; }
-  body { margin: 0; padding: 12px; background: #111; color: #eee; max-width: 900px; margin-inline: auto; }
-  h1 { font-size: 1.3rem; margin: 4px 0 8px; }
-  fieldset { border: 1px solid #333; border-radius: 8px; margin: 10px 0; }
-  label { display: block; margin: 6px 0; font-size: .9rem; }
-  input, select, textarea, button { font: inherit; padding: 6px; border-radius: 6px; border: 1px solid #444; background: #1b1b1b; color: #eee; }
-  input[type=text], input[type=number], input[type=url], select, textarea { width: 100%; box-sizing: border-box; }
-  .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }
-  button { cursor: pointer; background: #234; } button:disabled { opacity: .45; cursor: not-allowed; }
-  canvas { width: 100%; height: 220px; background: #000; border-radius: 6px; display: block; }
-  .readout { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 8px 0; }
-  .card { background: #1b1b1b; border-radius: 8px; padding: 8px; } .card b { font-size: 1.5rem; display: block; }
-  pre { background: #000; padding: 8px; border-radius: 6px; max-height: 320px; overflow: auto; font-size: .75rem; }
-  .muted { color: #999; font-size: .8rem; } .warn { color: #fc6; font-size: .85rem; }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Cam_I_hear_it: Idle Acoustic Capture</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:,">
 </head>
 <body>
-<h1>Cam_I_hear_it: idle capture (beta)</h1>
-<p class="muted">Recommended: engine warm, at idle. Record about 30 s at the tailpipe (about 0.5 m away, 45° off-axis), then about 30 s over the engine with the hood open. Point the bottom of the phone (where the mic is) at the source. See docs/RESEARCH_ACOUSTICS.md §9–10.</p>
+  <div class="app-shell">
+    <header class="app-header">
+      <h1>Cam_I_hear_it</h1>
+      <p class="subtitle">Vehicle engine idle acoustic recorder &amp; analyser</p>
+    </header>
 
-<fieldset><legend>Vehicle</legend>
-  <div class="row">
-    <label>Make <input id="make" type="text" placeholder="Chevrolet"></label>
-    <label>Model <input id="model" type="text" placeholder="Silverado 1500"></label>
-    <label>Year <input id="year" type="number" min="1900" max="2100" placeholder="2008"></label>
-    <label>Engine <input id="engine" type="text" placeholder="5.3L V8 (LY5)"></label>
-    <label>Cylinders (optional) <select id="cylinders"><option value="">Unknown / auto</option><option>3</option><option>4</option><option>5</option><option>6</option><option>8</option><option>10</option><option>12</option></select></label>
+    <!-- Guided Capture Walkthrough -->
+    <section class="section-card" aria-labelledby="guide-title">
+      <h2 id="guide-title" class="section-heading">Capture Walkthrough</h2>
+      <div id="captureGuide"></div>
+    </section>
+
+    <!-- Real-time Readout Dashboard -->
+    <section class="section-card" aria-label="Acoustic Readout">
+      <div class="readout-grid">
+        <div class="card card-primary">
+          <span class="card-caption">Estimated RPM</span>
+          <b id="rpm" class="card-hero">&ndash;</b>
+          <span id="rpmConf" class="card-sub">&ndash; Hz firing</span>
+        </div>
+        <div class="card">
+          <span class="card-caption">Cylinder Count</span>
+          <b id="cyl" class="card-hero">&ndash;</b>
+          <div class="meter-track"><div id="cylBar" class="meter-fill" style="width: 0%;"></div></div>
+          <span id="cylNote" class="card-sub">&ndash;</span>
+        </div>
+        <div class="card">
+          <span class="card-caption">Idle Lope Score</span>
+          <b id="lope" class="card-hero">&ndash;</b>
+          <div class="meter-track"><div id="lopeBar" class="meter-fill meter-lope" style="width: 0%;"></div></div>
+          <span id="lopeNote" class="card-sub">0 smooth &ndash; 100 choppy (provisional, uncalibrated)</span>
+        </div>
+        <div class="card">
+          <span class="card-caption">Recording Time</span>
+          <b id="time" class="card-hero">0 s</b>
+          <span id="sr" class="card-sub">Audio rate: &ndash;</span>
+        </div>
+        <div class="card card-muted">
+          <span class="card-caption">Combustion Knock</span>
+          <b class="card-hero card-hero-text">Not testable at idle</b>
+          <span class="card-sub">Spark knock needs load; use a rev/load test</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Spectrogram Visualiser -->
+    <section class="section-card" aria-label="Live Spectrogram">
+      <div class="spectrogram-container">
+        <canvas id="spec" width="900" height="240"></canvas>
+      </div>
+      <p class="canvas-caption">Log-frequency spectrogram (20 Hz &ndash; 8 kHz, bottom to top). Live scrolling display.</p>
+      <div id="warnings" class="warnings-box" role="alert" aria-live="polite"></div>
+    </section>
+
+    <!-- Vehicle Details Form -->
+    <fieldset class="section-card">
+      <legend class="section-heading">Vehicle Information</legend>
+      <div class="grid-form">
+        <label class="field">
+          <span class="field-label">Make</span>
+          <input id="make" type="text" placeholder="e.g. Chevrolet" autocomplete="off">
+        </label>
+        <label class="field">
+          <span class="field-label">Model</span>
+          <input id="model" type="text" placeholder="e.g. Silverado 1500" autocomplete="off">
+        </label>
+        <label class="field">
+          <span class="field-label">Year</span>
+          <input id="year" type="number" min="1900" max="2100" placeholder="2008">
+        </label>
+        <label class="field">
+          <span class="field-label">Engine</span>
+          <input id="engine" type="text" placeholder="e.g. 5.3L V8 (LY5)" autocomplete="off">
+        </label>
+        <label class="field">
+          <span class="field-label">Cylinders (optional)</span>
+          <select id="cylinders">
+            <option value="">Unknown / auto-detect</option>
+            <option value="3">3 cylinders</option>
+            <option value="4">4 cylinders</option>
+            <option value="5">5 cylinders</option>
+            <option value="6">6 cylinders</option>
+            <option value="8">8 cylinders</option>
+            <option value="10">10 cylinders</option>
+            <option value="12">12 cylinders</option>
+          </select>
+        </label>
+      </div>
+      <label class="field field-full">
+        <span class="field-label">Modifications (cam, headers, exhaust, tune)</span>
+        <textarea id="mods" rows="2" placeholder="e.g. TSP 224/230 .600 lift 112 LSA cam, long-tubes, catless X-pipe, mail-order tune"></textarea>
+      </label>
+    </fieldset>
+
+    <!-- Tap-to-Place Vehicle Outline Picker & Acoustic Geometry -->
+    <fieldset class="section-card">
+      <legend class="section-heading">Microphone Position &amp; Environment</legend>
+      <div class="toggle-row">
+        <label class="checkbox-inline">
+          <input id="rhd" type="checkbox"> Right-Hand Drive (RHD cabin)
+        </label>
+      </div>
+
+      <div class="picker-wrapper">
+        <div id="vehiclePicker"></div>
+      </div>
+
+      <!-- Hidden select mirror for tests/backwards compatibility -->
+      <select id="zone" class="visually-hidden" aria-hidden="true" tabindex="-1">
+        <option value="TAILPIPE_LEFT">Tailpipe Left</option>
+        <option value="TAILPIPE_RIGHT">Tailpipe Right</option>
+        <option value="TAILPIPE_CENTER">Tailpipe Center</option>
+        <option value="ENGINE_BAY_CENTER">Engine Bay Center</option>
+        <option value="ENGINE_BAY_LEFT">Engine Bay Left</option>
+        <option value="ENGINE_BAY_RIGHT">Engine Bay Right</option>
+        <option value="ENGINE_BAY_LOW">Engine Bay Low / Oil Pan</option>
+        <option value="GRILLE">Front Grille</option>
+        <option value="FRONT_WHEEL_LEFT">Front Wheel Left</option>
+        <option value="FRONT_WHEEL_RIGHT">Front Wheel Right</option>
+        <option value="REAR_WHEEL_LEFT">Rear Wheel Left</option>
+        <option value="REAR_WHEEL_RIGHT">Rear Wheel Right</option>
+        <option value="REAR_BUMPER">Rear Bumper</option>
+        <option value="CABIN">Cabin</option>
+      </select>
+
+      <div class="grid-form">
+        <label class="field">
+          <span class="field-label">Distance to source</span>
+          <select id="distanceBand">
+            <option value="NEAR">Near (&le; 0.3 m, engine bay)</option>
+            <option value="MID" selected>Mid (0.3 &ndash; 1 m, tailpipe standard)</option>
+            <option value="FAR">Far (1 &ndash; 3 m)</option>
+            <option value="VERY_FAR">Very Far (&gt; 3 m)</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Microphone height</span>
+          <select id="heightBand">
+            <option value="GROUND">Ground plane (comb reflection removed)</option>
+            <option value="LOW" selected>Low (&lt; 0.5 m, exhaust height)</option>
+            <option value="MID">Mid (0.5 &ndash; 1.2 m, engine deck)</option>
+            <option value="HIGH">High (&gt; 1.2 m)</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Hood state</span>
+          <select id="hood">
+            <option value="NA">N/A (rear / exhaust capture)</option>
+            <option value="OPEN">Open (recommended for engine bay)</option>
+            <option value="CLOSED">Closed</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Phone orientation</span>
+          <select id="phoneOrientation">
+            <option value="MIC_TOWARD_SOURCE" selected>Bottom edge (mic) pointing at source</option>
+            <option value="MIC_AWAY">Bottom edge pointing away</option>
+            <option value="FLAT_FACE_UP">Flat, screen facing up</option>
+            <option value="UNKNOWN">Unknown / handheld</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Engine temperature</span>
+          <select id="engineTemp">
+            <option value="WARM" selected>Warm (operating temperature idle)</option>
+            <option value="COLD">Cold start (high flare idle)</option>
+          </select>
+        </label>
+      </div>
+
+      <label class="field field-full">
+        <span class="field-label">Position notes (optional)</span>
+        <input id="positionNotes" type="text" placeholder="e.g. 45° off driver tip, directly over #3 intake runner">
+      </label>
+    </fieldset>
+
+    <!-- Mic Hardware Applied Settings Inspection -->
+    <details id="micAudit" class="section-card mic-audit-card">
+      <summary class="mic-audit-summary">Mic settings applied (getSettings)</summary>
+      <div id="micAuditBody" class="mic-audit-content">
+        <p class="muted">We request all voice processing off. This table shows what the browser reports it actually applied (<code>track.getSettings()</code>). iOS Safari may keep AGC or noise suppression on; timing features (RPM, lope) still work, level features are less reliable.</p>
+        <p id="micSummary" class="muted"></p>
+        <div class="table-scroll">
+          <table class="audit-table">
+            <thead>
+              <tr><th>Constraint</th><th>Requested</th><th>Applied</th><th>Status</th><th>Supp.</th></tr>
+            </thead>
+            <tbody id="micAuditRows">
+              <tr><td colspan="5" class="muted">Microphone not initialized yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p id="micDeviceId" class="muted mic-device-label"></p>
+      </div>
+    </details>
+
+    <!-- Cloud Upload (Opt-in) -->
+    <fieldset class="section-card">
+      <legend class="section-heading">Cloud Feature Submission (Optional)</legend>
+      <p class="muted">Only acoustic feature statistics, vehicle metadata, and mic hardware info are sent. <strong>Audio recordings are never uploaded.</strong></p>
+      <label class="field field-full">
+        <span class="field-label">Submission endpoint URL</span>
+        <input id="postUrl" type="url" placeholder="https://your-backend.example/api/v1/clips">
+      </label>
+      <label class="checkbox-inline">
+        <input id="postEnable" type="checkbox">
+        <span>Enable upload (explicit consent required)</span>
+      </label>
+      <div class="action-row">
+        <button id="post" type="button" class="btn btn-secondary" disabled>POST Payload</button>
+        <span id="postStatus" class="status-indicator"></span>
+      </div>
+    </fieldset>
+
+    <!-- Raw Payload Viewer -->
+    <details class="section-card">
+      <summary class="section-heading-sub">Inspect JSON Payload</summary>
+      <pre id="payload" class="payload-dump">(record a clip to generate payload)</pre>
+    </details>
+
+    <!-- Mobile-Sticky Record & Action Bar -->
+    <nav class="record-bar" aria-label="Recording controls">
+      <div class="record-bar-inner">
+        <button id="start" type="button" class="btn btn-record">
+          <span class="record-dot"></span> Record
+        </button>
+        <button id="stop" type="button" class="btn btn-stop" disabled>
+          <span class="stop-square"></span> Stop
+        </button>
+        <button id="dlJson" type="button" class="btn btn-action" disabled>JSON</button>
+        <button id="dlWav" type="button" class="btn btn-action" disabled>WAV</button>
+      </div>
+    </nav>
   </div>
-  <label>Mods (optional, write in: cam, exhaust, headers, tune, intake ...)
-    <textarea id="mods" rows="3" placeholder="e.g. Texas Speed 224/230 .600 lift 112+4 LSA cam, long-tube headers, X-pipe, Flowmaster 40s, HP Tuners tune"></textarea></label>
-</fieldset>
 
-<fieldset><legend>Capture</legend>
-  <div class="row">
-    <label>Position <select id="zone">
-      <option value="TAILPIPE_LEFT">Tailpipe – driver side</option><option value="TAILPIPE_RIGHT">Tailpipe – passenger side</option><option value="TAILPIPE_CENTER">Tailpipe – centre/single</option>
-      <option value="ENGINE_BAY_CENTER">Engine bay – over intake</option><option value="ENGINE_BAY_LEFT">Engine bay – driver valve cover</option><option value="ENGINE_BAY_RIGHT">Engine bay – passenger valve cover</option>
-      <option value="GRILLE">Front grille</option><option value="FRONT_WHEEL_LEFT">Driver front wheel</option><option value="FRONT_WHEEL_RIGHT">Passenger front wheel</option>
-      <option value="REAR_WHEEL_LEFT">Driver rear wheel</option><option value="REAR_WHEEL_RIGHT">Passenger rear wheel</option><option value="REAR_BUMPER">Rear bumper</option><option value="CABIN">Cabin</option>
-    </select></label>
-    <label>Distance <select id="distanceBand"><option value="NEAR">≤ 0.3 m</option><option value="MID" selected>0.3–1 m</option><option value="FAR">1–3 m</option><option value="VERY_FAR">&gt; 3 m</option></select></label>
-    <label>Height <select id="heightBand"><option value="GROUND">On ground</option><option value="LOW" selected>&lt; 0.5 m</option><option value="MID">0.5–1.2 m</option><option value="HIGH">&gt; 1.2 m</option></select></label>
-    <label>Hood <select id="hood"><option value="NA">N/A (rear)</option><option value="OPEN">Open</option><option value="CLOSED">Closed</option></select></label>
-    <label>Phone mic <select id="phoneOrientation"><option value="MIC_TOWARD_SOURCE">Bottom edge toward source</option><option value="MIC_AWAY">Bottom edge away</option><option value="FLAT_FACE_UP">Flat, face up</option><option value="UNKNOWN">Unknown</option></select></label>
-    <label>Engine temp <select id="engineTemp"><option value="WARM">Warm</option><option value="COLD">Cold start</option></select></label>
-  </div>
-  <p class="muted">A tap-to-place 360° vehicle outline is planned. These zone codes match the scheme in docs/RESEARCH_ACOUSTICS.md §10.</p>
-</fieldset>
-
-<div class="row">
-  <button id="start">● Start recording</button>
-  <button id="stop" disabled>■ Stop &amp; analyse</button>
-  <button id="dlJson" disabled>Download JSON</button>
-  <button id="dlWav" disabled>Download WAV</button>
-</div>
-
-<div class="readout">
-  <div class="card">RPM <b id="rpm">–</b><span class="muted" id="rpmConf"></span></div>
-  <div class="card">Cylinders <b id="cyl">–</b><span class="muted" id="cylNote"></span></div>
-  <div class="card">Lope score <b id="lope">–</b><span class="muted">0 smooth – 100 choppy</span></div>
-  <div class="card">Time <b id="time">0 s</b><span class="muted" id="sr"></span></div>
-</div>
-<canvas id="spec" width="900" height="220"></canvas>
-<p class="muted">Spectrogram, log frequency 20 Hz – 8 kHz (bottom to top).</p>
-<div id="warnings" class="warn"></div>
-
-<fieldset><legend>Upload (off by default)</legend>
-  <label>Backend URL <input id="postUrl" type="url" placeholder="https://your-backend.example/api/v1/clips"></label>
-  <label><input id="postEnable" type="checkbox"> Enable upload (features + vehicle info only, no audio)</label>
-  <button id="post" disabled>POST payload</button> <span id="postStatus" class="muted"></span>
-</fieldset>
-
-<details><summary>Payload</summary><pre id="payload">(record a clip first)</pre></details>
-<script type="module" src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

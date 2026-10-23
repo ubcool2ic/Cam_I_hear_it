@@ -1,211 +1,637 @@
 /**
  * @file web/app.js
- * @summary Cam_I_hear_it capture page logic. Handles mic capture with browser processing disabled, a live log-frequency
- * spectrogram, rolling RPM/lope analysis with the DSP lib, payload assembly, and download plus opt-in POST.
- *
- * Safari note (docs/RESEARCH_ACOUSTICS.md §7): iOS Safari may ignore autoGainControl/noiseSuppression, so the
- * actual track settings are recorded in every payload.
+ * @summary Cam_I_hear_it capture page controller. Opens the mic with voice processing off (and shows what the browser
+ * actually applied), records via an AudioWorklet, draws a hi-DPI log-frequency spectrogram, runs live (every 2 s, last
+ * 8 s) and final analysis with the DSP lib, wires the 360° position picker and guided capture steps, and builds the
+ * JSON payload for download or strictly opt-in POST (audio is never uploaded).
  */
-import { analyzeClip, FEATURE_SCHEMA } from "./lib/index.js";
 
-/** Upload payload schema id (see docs/ML_BACKEND.md). */
+import { analyzeClip, FEATURE_SCHEMA } from "./lib/index.js";
+import { createVehiclePicker } from "./vehicle-picker.js";
+import { createCaptureGuide } from "./capture-guide.js";
+
+/** Upload payload schema version id. */
 const PAYLOAD_SCHEMA = "cam-i-hear-it/upload@1";
-/** Seconds of audio used for each live analysis pass. */
+
+/** Rolling window length (seconds) for live background analysis. */
 const LIVE_WINDOW_S = 8;
-/** Max recording length kept in memory (s). */
+
+/** Initial transient skip in seconds before running live analysis. */
+const TRANSIENT_SKIP_S = 1.0;
+
+/** Minimum audio required after the initial transient before running analysis. */
+const MIN_ANALYSIS_S = 4.0;
+
+/** Maximum clip audio duration kept in ring buffer (seconds). */
 const MAX_S = 120;
 
+/** Frequency ticks to label on the Hi-DPI spectrogram vertical axis. */
+const FREQ_TICKS = [50, 100, 200, 500, 1000, 2000, 5000];
+
+/** Shorthand document element retriever. */
 const $ = (id) => document.getElementById(id);
-const state = { ctx: null, stream: null, track: null, node: null, analyser: null, chunks: [], total: 0, raf: 0, timer: 0, sampleRate: 0, settings: null, features: null, startedAt: null };
 
-/** Builds the getUserMedia audio constraints with all voice processing disabled. */
+/** Internal audio & capture state machine. */
+const state = {
+  ctx: null,
+  stream: null,
+  track: null,
+  node: null,
+  analyser: null,
+  chunks: [],
+  total: 0,
+  raf: 0,
+  timer: 0,
+  sampleRate: 0,
+  requestedConstraints: null,
+  supportedConstraints: null,
+  settings: {},
+  features: null,
+  startedAt: null,
+  currentGuideStep: "step-tailpipe",
+  pickerValue: { zone: "TAILPIPE_LEFT", side: "LEFT", tapXY: [0.28, 0.93] },
+};
+
+/**
+ * Returns audio constraint configuration disabling browser speech filters.
+ * @returns {MediaTrackConstraints}
+ */
 function audioConstraints() {
-  return { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 };
-}
-
-/** Starts recording: opens the mic, wires the worklet and analyser, and starts the UI loops. */
-async function start() {
-  $("warnings").textContent = "";
-  try {
-    state.stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints(), video: false });
-  } catch (e) {
-    $("warnings").textContent = "Microphone permission denied or unavailable: " + e.message;
-    return;
-  }
-  state.track = state.stream.getAudioTracks()[0];
-  // Re-apply; some WebKit versions only honour constraints via applyConstraints (WebKit bug 179411).
-  try { await state.track.applyConstraints(audioConstraints()); } catch (_) { /* ignore */ }
-  state.settings = state.track.getSettings ? state.track.getSettings() : {};
-  state.ctx = new (window.AudioContext || window.webkitAudioContext)();
-  await state.ctx.audioWorklet.addModule("recorder-worklet.js");
-  const src = state.ctx.createMediaStreamSource(state.stream);
-  state.node = new AudioWorkletNode(state.ctx, "recorder");
-  state.analyser = state.ctx.createAnalyser();
-  state.analyser.fftSize = 8192;
-  state.analyser.smoothingTimeConstant = 0;
-  src.connect(state.analyser);
-  src.connect(state.node);
-  // Keep the worklet pulled without audible output.
-  const mute = state.ctx.createGain(); mute.gain.value = 0;
-  state.node.connect(mute).connect(state.ctx.destination);
-  state.sampleRate = state.ctx.sampleRate;
-  state.chunks = []; state.total = 0; state.features = null; state.startedAt = new Date().toISOString();
-  state.node.port.onmessage = (ev) => {
-    state.chunks.push(ev.data); state.total += ev.data.length;
-    while (state.total > MAX_S * state.sampleRate) state.total -= state.chunks.shift().length;
+  return {
+    echoCancellation: false,
+    noiseSuppression: false,
+    autoGainControl: false,
+    channelCount: 1,
   };
-  $("sr").textContent = ` ${state.sampleRate} Hz`;
-  const processingOn = ["echoCancellation", "noiseSuppression", "autoGainControl"].filter((k) => state.settings[k] === true || state.settings[k] === undefined);
-  if (processingOn.length) $("warnings").textContent = `Browser reports these may still be active or unknown: ${processingOn.join(", ")}. Timing features are still valid; level features are less reliable.`;
-  $("start").disabled = true; $("stop").disabled = false; $("dlJson").disabled = true; $("dlWav").disabled = true;
-  drawLoop();
-  state.timer = setInterval(liveAnalyse, 2000);
 }
 
-/** Returns the last `seconds` of recorded audio (or all of it if null) as one Float32Array. */
-function samples(seconds = null) {
-  const out = new Float32Array(state.total);
-  let o = 0;
-  for (const c of state.chunks) { out.set(c, o); o += c.length; }
-  if (seconds == null) return out;
-  const n = Math.min(out.length, Math.round(seconds * state.sampleRate));
-  return out.subarray(out.length - n);
+/**
+ * Formats lope score into a qualitative label and returns badge color.
+ * @param {number} lope Numeric score 0-100 or NaN.
+ * @returns {{ label: string, pct: number }}
+ */
+function formatLope(lope) {
+  if (!Number.isFinite(lope)) return { label: "unknown", pct: 0 };
+  const clamped = Math.max(0, Math.min(100, lope));
+  let word = "smooth";
+  if (clamped >= 65) word = "heavy";
+  else if (clamped >= 40) word = "noticeable";
+  else if (clamped >= 20) word = "mild";
+  return { label: `${word} (${Math.round(clamped)})`, pct: clamped };
 }
 
-/** Reads the cylinder count from the form (undefined if auto). */
+/**
+ * Reads user-specified cylinders from the select box.
+ * @returns {number|undefined} Positive integer cylinder count or undefined.
+ */
 function formCylinders() {
   const v = parseInt($("cylinders").value, 10);
-  return Number.isFinite(v) ? v : undefined;
+  return Number.isFinite(v) && v > 0 ? v : undefined;
 }
 
-/** Runs analysis on the latest window and updates the readout. */
-function liveAnalyse() {
-  $("time").textContent = `${(state.total / state.sampleRate).toFixed(0)} s`;
-  if (state.total < state.sampleRate * 4) return;
-  const fv = analyzeClip(samples(LIVE_WINDOW_S), state.sampleRate, { cylinders: formCylinders() });
-  show(fv);
+/**
+ * Returns the recorded audio samples as one contiguous Float32Array.
+ * @param {number|null} [seconds=null] Duration to slice from tail, or null for all.
+ * @param {number} [skipStartS=0] Duration in seconds to drop from head.
+ * @returns {Float32Array}
+ */
+function samples(seconds = null, skipStartS = 0) {
+  const out = new Float32Array(state.total);
+  let offset = 0;
+  for (const c of state.chunks) {
+    out.set(c, offset);
+    offset += c.length;
+  }
+  const skipCount = Math.min(out.length, Math.round(skipStartS * state.sampleRate));
+  const valid = skipCount > 0 ? out.subarray(skipCount) : out;
+
+  if (seconds == null) return valid;
+  const needCount = Math.min(valid.length, Math.round(seconds * state.sampleRate));
+  return valid.subarray(valid.length - needCount);
 }
 
-/** Renders a feature vector into the readout cards. */
+/**
+ * Rows shown in the "Mic settings applied" table: key, label, what we request, and how to judge the applied value.
+ * `judge` returns "ok" | "warn" | "info".
+ */
+const MIC_ROWS = [
+  { key: "echoCancellation", label: "Echo cancellation", requested: "off", judge: (v) => (v === false ? "ok" : v === true ? "warn" : "unk") },
+  { key: "noiseSuppression", label: "Noise suppression", requested: "off", judge: (v) => (v === false ? "ok" : v === true ? "warn" : "unk") },
+  { key: "autoGainControl", label: "Auto gain control", requested: "off", judge: (v) => (v === false ? "ok" : v === true ? "warn" : "unk") },
+  { key: "channelCount", label: "Channels", requested: "1", judge: (v) => (v === undefined ? "unk" : "info") },
+  { key: "sampleRate", label: "Sample rate (Hz)", requested: "native", judge: (v) => (v === undefined ? "unk" : "info") },
+  { key: "latency", label: "Latency (s)", requested: "–", judge: (v) => (v === undefined ? "unk" : "info") },
+];
+
+/** Status text and CSS class per judgement. */
+const MIC_STATUS = {
+  ok: ["✓ off", "status-tag status-ok"],
+  warn: ["⚠ on", "status-tag status-warn"],
+  unk: ["? unknown", "status-tag status-unk"],
+  info: ["reported", "status-tag status-ok"],
+};
+
+/**
+ * Renders the "Mic settings applied" table from `track.getSettings()` and `getSupportedConstraints()`.
+ * Uses DOM nodes and textContent only (browser-reported strings are never parsed as HTML).
+ */
+function updateMicAuditPanel() {
+  const tbody = $("micAuditRows");
+  if (!state.track) return;
+  tbody.textContent = "";
+  const td = (text, cls) => { const c = document.createElement("td"); c.textContent = text; if (cls) c.className = cls; return c; };
+  const flagged = [];
+  for (const row of MIC_ROWS) {
+    const actual = state.settings ? state.settings[row.key] : undefined;
+    const verdict = row.judge(actual);
+    if (verdict === "warn" || verdict === "unk") if (row.requested === "off") flagged.push(`${row.label}: ${verdict === "warn" ? "on" : "unknown"}`);
+    const [statusText, statusClass] = MIC_STATUS[verdict];
+    const sup = state.supportedConstraints ? state.supportedConstraints[row.key] : undefined;
+    const tr = document.createElement("tr");
+    const status = document.createElement("td");
+    const tag = document.createElement("span"); tag.className = statusClass; tag.textContent = statusText; status.appendChild(tag);
+    tr.append(td(row.label), td(row.requested), td(actual === undefined ? "not reported" : String(actual)), status, td(sup === true ? "yes" : sup === false ? "no" : "?"));
+    tbody.appendChild(tr);
+  }
+  const devId = state.settings && state.settings.deviceId ? String(state.settings.deviceId).slice(0, 12) + "…" : "n/a";
+  $("micDeviceId").textContent = `Mic: ${state.track.label || "default input"} (deviceId ${devId}); AudioContext rate ${state.sampleRate || "–"} Hz`;
+  $("micSummary").textContent = flagged.length
+    ? `Heads-up: ${flagged.join(", ")}. Timing features (RPM, lope) are still valid; level/timbre features are less reliable.`
+    : "All voice processing reported off.";
+}
+
+/**
+ * Updates UI readout cards with feature vector values.
+ * @param {import("./lib/index.js").FeatureVector} fv
+ */
 function show(fv) {
+  // RPM
   $("rpm").textContent = Number.isFinite(fv.rpm.estimate) ? Math.round(fv.rpm.estimate) : "–";
-  $("rpmConf").textContent = ` firing ${fv.rpm.firingHz.toFixed(1)} Hz`;
-  $("cyl").textContent = fv.rpm.cylindersUsed;
-  $("cylNote").textContent = formCylinders() ? " (from form)" : ` p=${fv.rpm.confidence.toFixed(2)}`;
+  $("rpmConf").textContent = Number.isFinite(fv.rpm.firingHz) ? `${fv.rpm.firingHz.toFixed(1)} Hz firing` : "– Hz firing";
+
+  // Cylinders
+  const userCyl = formCylinders();
+  $("cyl").textContent = fv.rpm.cylindersUsed || "–";
+  const confPct = Math.round((fv.rpm.confidence || 0) * 100);
+  $("cylBar").style.width = `${userCyl ? 100 : confPct}%`;
+  $("cylNote").textContent = userCyl
+    ? "(from form)"
+    : `Confidence: ${confPct}%${fv.hypotheses && fv.hypotheses.length > 1 ? ` (alt: ${fv.hypotheses[1].cylinders} cyl)` : ""}`;
+
+  // Lope
+  const lopeInfo = formatLope(fv.lope.score);
   $("lope").textContent = Number.isFinite(fv.lope.score) ? Math.round(fv.lope.score) : "–";
-  if (fv.warnings.length) $("warnings").textContent = fv.warnings.join(" · ");
+  $("lopeBar").style.width = `${lopeInfo.pct}%`;
+  $("lopeNote").textContent = `${lopeInfo.label} — provisional, uncalibrated`;
+
+  // Warnings: replace completely to prevent stale warnings from persisting
+  const warnEl = $("warnings");
+  if (fv.warnings && fv.warnings.length) {
+    warnEl.textContent = fv.warnings.join(" · ");
+  } else {
+    warnEl.textContent = "";
+  }
 }
 
-/** Stops recording, analyses the whole clip, and builds the payload. */
-function stop() {
-  clearInterval(state.timer); cancelAnimationFrame(state.raf);
-  state.node.port.onmessage = null;
-  state.stream.getTracks().forEach((t) => t.stop());
-  state.ctx.close();
-  $("start").disabled = false; $("stop").disabled = true;
-  if (state.total < state.sampleRate * 4) { $("warnings").textContent = "Clip too short (need at least 4 s)."; return; }
-  state.features = analyzeClip(samples(), state.sampleRate, { cylinders: formCylinders() });
-  show(state.features);
-  refreshPayload();
-  $("dlJson").disabled = false; $("dlWav").disabled = false;
+/**
+ * Runs live analysis periodically on trailing window.
+ */
+function liveAnalyse() {
+  const durationS = state.total / state.sampleRate;
+  $("time").textContent = `${durationS.toFixed(0)} s`;
+
+  // Require transient skip + minimum analysis length
+  if (durationS < TRANSIENT_SKIP_S + MIN_ANALYSIS_S) return;
+
+  const clip = samples(LIVE_WINDOW_S, TRANSIENT_SKIP_S);
+  if (clip.length < state.sampleRate * MIN_ANALYSIS_S) return;
+
+  try {
+    const fv = analyzeClip(clip, state.sampleRate, { cylinders: formCylinders() });
+    show(fv);
+  } catch (err) {
+    $("warnings").textContent = `Analysis error: ${err.message}`;
+  }
 }
 
-/** Assembles the upload payload: vehicle, capture, device, and features. */
+/**
+ * JSON serialization helper mapping non-finite numbers to null.
+ * @param {object} obj Object to format.
+ * @returns {string} Formatted JSON string.
+ */
+function toJSON(obj) {
+  return JSON.stringify(obj, (_k, v) => (typeof v === "number" && !Number.isFinite(v) ? null : v), 2);
+}
+
+/**
+ * Constructs the final upload payload object.
+ * @returns {object}
+ */
 function buildPayload() {
-  const val = (id) => $(id).value.trim();
+  const val = (id) => ($(id) ? $(id).value.trim() : "");
   return {
     schema: PAYLOAD_SCHEMA,
     featureSchema: FEATURE_SCHEMA,
     createdAt: new Date().toISOString(),
     recordingStartedAt: state.startedAt,
-    vehicle: { make: val("make"), model: val("model"), year: parseInt(val("year"), 10) || null, engine: val("engine"), cylinders: formCylinders() ?? null, mods: val("mods") || null },
+    vehicle: {
+      make: val("make"),
+      model: val("model"),
+      year: parseInt(val("year"), 10) || null,
+      engine: val("engine"),
+      cylinders: formCylinders() ?? null,
+      mods: val("mods") || null,
+    },
     capture: {
-      position: { zone: val("zone"), distanceBand: val("distanceBand"), heightBand: val("heightBand"), hood: val("hood"), phoneOrientation: val("phoneOrientation") },
+      guideStep: state.currentGuideStep,
+      rhd: $("rhd").checked,
+      position: {
+        zone: state.pickerValue.zone,
+        side: state.pickerValue.side,
+        tapXY: state.pickerValue.tapXY,
+        distanceBand: val("distanceBand"),
+        heightBand: val("heightBand"),
+        hood: val("hood"),
+        phoneOrientation: val("phoneOrientation"),
+        notes: val("positionNotes") || null,
+      },
       engineTemp: val("engineTemp"),
-      durationS: state.total / state.sampleRate,
+      durationS: state.sampleRate ? state.total / state.sampleRate : 0,
     },
     device: {
       userAgent: navigator.userAgent,
       sampleRate: state.sampleRate,
-      trackSettings: state.settings,
-      supportedConstraints: navigator.mediaDevices.getSupportedConstraints ? navigator.mediaDevices.getSupportedConstraints() : null,
+      requestedConstraints: state.requestedConstraints,
+      // deviceId/groupId are per-device identifiers; drop them from the payload (privacy), keep the DSP settings.
+      trackSettings: state.settings ? Object.fromEntries(Object.entries(state.settings).filter(([k]) => k !== "deviceId" && k !== "groupId")) : null,
+      supportedConstraints: state.supportedConstraints,
     },
     features: state.features,
   };
 }
 
-/** JSON-stringifies with NaN/Infinity mapped to null. */
-function toJSON(obj) {
-  return JSON.stringify(obj, (_k, v) => (typeof v === "number" && !Number.isFinite(v) ? null : v), 2);
-}
-
-/** Re-renders the payload preview and the POST button state. */
+/**
+ * Refreshes payload display and upload button enabled state.
+ */
 function refreshPayload() {
-  if (state.features) $("payload").textContent = toJSON(buildPayload());
+  if (state.features) {
+    $("payload").textContent = toJSON(buildPayload());
+  }
   const url = $("postUrl").value.trim();
-  $("post").disabled = !(state.features && url && $("postEnable").checked && /^https?:\/\//.test(url));
+  const validUrl = /^https?:\/\//i.test(url);
+  $("post").disabled = !(state.features && $("postEnable").checked && validUrl);
 }
 
-/** Triggers a browser download of a Blob. */
-function download(blob, name) {
+/**
+ * Initiates browser file download for a Blob.
+ * @param {Blob} blob Data blob.
+ * @param {string} filename Output file name.
+ */
+function download(blob, filename) {
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-/** Encodes mono float samples as 16-bit PCM WAV. */
-function wav(x, sr) {
+/**
+ * Encodes Float32Array PCM samples into standard 16-bit WAV Blob.
+ * @param {Float32Array} x Samples.
+ * @param {number} sr Sample rate.
+ * @returns {Blob}
+ */
+function encodeWav(x, sr) {
   const buf = new ArrayBuffer(44 + x.length * 2);
-  const v = new DataView(buf);
-  const w = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
-  w(0, "RIFF"); v.setUint32(4, 36 + x.length * 2, true); w(8, "WAVE"); w(12, "fmt ");
-  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, sr, true);
-  v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, "data"); v.setUint32(40, x.length * 2, true);
-  for (let i = 0; i < x.length; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, x[i])) * 0x7fff, true);
+  const view = new DataView(buf);
+  const writeStr = (off, s) => {
+    for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i));
+  };
+  writeStr(0, "RIFF");
+  view.setUint32(4, 36 + x.length * 2, true);
+  writeStr(8, "WAVE");
+  writeStr(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // Mono
+  view.setUint32(24, sr, true);
+  view.setUint32(28, sr * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeStr(36, "data");
+  view.setUint32(40, x.length * 2, true);
+  for (let i = 0; i < x.length; i++) {
+    const s = Math.max(-1, Math.min(1, x[i]));
+    view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
   return new Blob([buf], { type: "audio/wav" });
 }
 
-/** POSTs the payload to the configured URL. Only runs when explicitly enabled by the user. */
-async function post() {
+/**
+ * POSTs payload JSON features only to the user-entered URL. Audio is never sent.
+ */
+async function postPayload() {
   const url = $("postUrl").value.trim();
   if (!$("postEnable").checked || !url) return;
-  $("postStatus").textContent = "sending…";
+  const statusEl = $("postStatus");
+  statusEl.textContent = "sending…";
   try {
-    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: toJSON(buildPayload()) });
-    $("postStatus").textContent = `HTTP ${r.status}`;
-  } catch (e) { $("postStatus").textContent = "failed: " + e.message; }
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: toJSON(buildPayload()),
+    });
+    statusEl.textContent = `HTTP ${res.status}`;
+  } catch (err) {
+    statusEl.textContent = `failed: ${err.message}`;
+  }
 }
 
-/** Scrolling log-frequency spectrogram (20 Hz – 8 kHz) from the AnalyserNode. */
-function drawLoop() {
-  const cv = $("spec"), g = cv.getContext("2d");
-  const bins = new Float32Array(state.analyser.frequencyBinCount);
+/**
+ * Hi-DPI scrolling spectrogram loop with frequency axis labels.
+ */
+function drawSpectrogram() {
+  const canvas = $("spec");
+  const ctx = canvas.getContext("2d");
+
+  // Hi-DPI canvas backing store scaling
+  const dpr = window.devicePixelRatio || 1;
+  const displayW = canvas.clientWidth || 900;
+  const displayH = 220;
+
+  if (canvas.width !== Math.round(displayW * dpr) || canvas.height !== Math.round(displayH * dpr)) {
+    canvas.width = Math.round(displayW * dpr);
+    canvas.height = Math.round(displayH * dpr);
+  }
+
+  const w = canvas.width;
+  const h = canvas.height;
+  const fftBins = new Float32Array(state.analyser.frequencyBinCount);
   const df = state.sampleRate / state.analyser.fftSize;
-  const fLo = 20, fHi = Math.min(8000, state.sampleRate / 2);
-  const step = () => {
-    state.analyser.getFloatFrequencyData(bins);
-    g.drawImage(cv, -2, 0);
-    for (let y = 0; y < cv.height; y++) {
-      const f = fLo * Math.pow(fHi / fLo, 1 - y / (cv.height - 1));
-      const db = bins[Math.min(bins.length - 1, Math.round(f / df))];
-      const t = Math.max(0, Math.min(1, (db + 110) / 80));
-      g.fillStyle = `hsl(${240 - 240 * t},100%,${10 + 50 * t}%)`;
-      g.fillRect(cv.width - 2, y, 2, 1);
+  const fLo = 20;
+  const fHi = Math.min(8000, state.sampleRate / 2);
+
+  // Axis margins
+  const axisW = Math.round(44 * dpr);
+  const plotW = w - axisW;
+
+  const renderFrame = () => {
+    state.analyser.getFloatFrequencyData(fftBins);
+
+    // Scroll spectrogram display left by 2px inside plot area
+    ctx.drawImage(canvas, axisW + 2, 0, plotW - 2, h, axisW, 0, plotW - 2, h);
+
+    // Render new spectrum column at the right edge
+    for (let y = 0; y < h; y++) {
+      const f = fLo * Math.pow(fHi / fLo, 1 - y / (h - 1));
+      const binIdx = Math.min(fftBins.length - 1, Math.round(f / df));
+      const db = fftBins[binIdx];
+      const norm = Math.max(0, Math.min(1, (db + 110) / 80));
+      ctx.fillStyle = `hsl(${240 - 240 * norm}, 100%, ${10 + 55 * norm}%)`;
+      ctx.fillRect(w - 2, y, 2, 1);
     }
-    state.raf = requestAnimationFrame(step);
+
+    // Overlay frequency scale on the left axis bar
+    ctx.fillStyle = "#090d12";
+    ctx.fillRect(0, 0, axisW, h);
+    ctx.strokeStyle = "#27313f";
+    ctx.beginPath();
+    ctx.moveTo(axisW, 0);
+    ctx.lineTo(axisW, h);
+    ctx.stroke();
+
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = `${Math.round(9 * dpr)}px system-ui, sans-serif`;
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+
+    for (const freq of FREQ_TICKS) {
+      if (freq < fLo || freq > fHi) continue;
+      const y = (1 - Math.log(freq / fLo) / Math.log(fHi / fLo)) * (h - 1);
+      ctx.strokeStyle = "rgba(148, 163, 184, 0.25)";
+      ctx.beginPath();
+      ctx.moveTo(axisW - 4, y);
+      ctx.lineTo(axisW, y);
+      ctx.stroke();
+
+      const label = freq >= 1000 ? `${freq / 1000}k` : `${freq}`;
+      ctx.fillText(label, axisW - 6, y);
+    }
+
+    state.raf = requestAnimationFrame(renderFrame);
   };
-  step();
+
+  renderFrame();
 }
 
-// Wire up controls.
-$("start").onclick = start;
-$("stop").onclick = stop;
-$("dlJson").onclick = () => download(new Blob([toJSON(buildPayload())], { type: "application/json" }), `cam-i-hear-it-${Date.now()}.json`);
-$("dlWav").onclick = () => download(wav(samples(), state.sampleRate), `cam-i-hear-it-${Date.now()}.wav`);
-$("post").onclick = post;
-for (const id of ["postUrl", "postEnable", "make", "model", "year", "engine", "cylinders", "mods", "zone", "distanceBand", "heightBand", "hood", "phoneOrientation", "engineTemp"]) {
-  $(id).addEventListener("input", refreshPayload); $(id).addEventListener("change", refreshPayload);
+/**
+ * Opens microphone stream, wires worklet recorder and analyser, and starts capture.
+ */
+async function startCapture() {
+  $("warnings").textContent = "";
+  state.requestedConstraints = audioConstraints();
+  state.supportedConstraints = navigator.mediaDevices.getSupportedConstraints
+    ? navigator.mediaDevices.getSupportedConstraints()
+    : null;
+
+  try {
+    state.stream = await navigator.mediaDevices.getUserMedia({
+      audio: state.requestedConstraints,
+      video: false,
+    });
+  } catch (err) {
+    $("warnings").textContent = `Microphone permission denied or unavailable: ${err.message}`;
+    return;
+  }
+
+  state.track = state.stream.getAudioTracks()[0];
+  try {
+    await state.track.applyConstraints(state.requestedConstraints);
+  } catch (_) {
+    /* Safari may reject applyConstraints; proceed */
+  }
+
+  state.settings = state.track.getSettings ? state.track.getSettings() : {};
+  updateMicAuditPanel();
+
+  state.ctx = new (window.AudioContext || window.webkitAudioContext)();
+  // iOS Safari can create the context "suspended" because the user gesture has expired after the getUserMedia await.
+  if (state.ctx.state === "suspended") {
+    try { await state.ctx.resume(); } catch (_) { /* reported below if no audio arrives */ }
+  }
+  try {
+    await state.ctx.audioWorklet.addModule("recorder-worklet.js");
+  } catch (err) {
+    $("warnings").textContent = `AudioWorklet failed to load: ${err.message}`;
+    state.stream.getTracks().forEach((t) => t.stop());
+    state.ctx.close();
+    return;
+  }
+
+  const source = state.ctx.createMediaStreamSource(state.stream);
+  state.node = new AudioWorkletNode(state.ctx, "recorder");
+  state.analyser = state.ctx.createAnalyser();
+  state.analyser.fftSize = 8192;
+  state.analyser.smoothingTimeConstant = 0;
+
+  source.connect(state.analyser);
+  source.connect(state.node);
+
+  // Mute audio path to speakers while keeping node awake
+  const muteGain = state.ctx.createGain();
+  muteGain.gain.value = 0;
+  state.node.connect(muteGain).connect(state.ctx.destination);
+
+  state.sampleRate = state.ctx.sampleRate;
+  state.chunks = [];
+  state.total = 0;
+  state.features = null;
+  state.startedAt = new Date().toISOString();
+
+  state.node.port.onmessage = (ev) => {
+    state.chunks.push(ev.data);
+    state.total += ev.data.length;
+    while (state.total > MAX_S * state.sampleRate) {
+      state.total -= state.chunks.shift().length;
+    }
+  };
+
+  $("sr").textContent = `Audio rate: ${state.sampleRate} Hz`;
+  updateMicAuditPanel();
+  $("micAudit").open = true;
+
+  $("start").disabled = true;
+  $("stop").disabled = false;
+  $("dlJson").disabled = true;
+  $("dlWav").disabled = true;
+
+  drawSpectrogram();
+  state.timer = setInterval(liveAnalyse, 2000);
 }
-// Optional ?post=URL pre-fills the backend URL (upload still needs the checkbox).
-const qp = new URLSearchParams(location.search).get("post");
-if (qp) $("postUrl").value = qp;
+
+/**
+ * Stops microphone capture, runs final clip analysis, and enables export.
+ */
+function stopCapture() {
+  clearInterval(state.timer);
+  cancelAnimationFrame(state.raf);
+
+  if (state.node && state.node.port) {
+    state.node.port.onmessage = null;
+  }
+  if (state.stream) {
+    state.stream.getTracks().forEach((t) => t.stop());
+  }
+  if (state.ctx) {
+    state.ctx.close();
+  }
+
+  $("start").disabled = false;
+  $("stop").disabled = true;
+
+  const totalS = state.total / state.sampleRate;
+  if (totalS < TRANSIENT_SKIP_S + MIN_ANALYSIS_S) {
+    $("warnings").textContent = "Recording too short (need at least 5 s of audio).";
+    return;
+  }
+
+  // Final pass on full clip dropping startup transient
+  try {
+    const clip = samples(null, TRANSIENT_SKIP_S);
+    state.features = analyzeClip(clip, state.sampleRate, { cylinders: formCylinders() });
+    show(state.features);
+    refreshPayload();
+    $("dlJson").disabled = false;
+    $("dlWav").disabled = false;
+  } catch (err) {
+    $("warnings").textContent = `Final analysis error: ${err.message}`;
+  }
+}
+
+// Initialise Submodules: Vehicle Outline Picker & Capture Guide
+const picker = createVehiclePicker($("vehiclePicker"), {
+  onChange(val) {
+    state.pickerValue = val;
+    $("zone").value = val.zone;
+    refreshPayload();
+  },
+});
+
+state.pickerValue = picker.getValue();
+
+createCaptureGuide($("captureGuide"), {
+  onStep(step) {
+    state.currentGuideStep = step.id;
+    if (step.preset) {
+      if (step.preset.zone) {
+        picker.setZone(step.preset.zone);
+        $("zone").value = step.preset.zone;
+        state.pickerValue = picker.getValue();
+      }
+      if (step.preset.distanceBand) $("distanceBand").value = step.preset.distanceBand;
+      if (step.preset.heightBand) $("heightBand").value = step.preset.heightBand;
+      if (step.preset.hood) $("hood").value = step.preset.hood;
+      if (step.preset.phoneOrientation) $("phoneOrientation").value = step.preset.phoneOrientation;
+      if (step.preset.engineTemp) $("engineTemp").value = step.preset.engineTemp;
+    }
+    refreshPayload();
+  },
+});
+
+// Sync RHD checkbox with vehicle picker
+$("rhd").addEventListener("change", (e) => {
+  picker.setRhd(e.target.checked);
+  refreshPayload();
+});
+
+// Hidden zone select fallback sync
+$("zone").addEventListener("change", (e) => {
+  picker.setZone(e.target.value);
+  state.pickerValue = picker.getValue();
+  refreshPayload();
+});
+
+// Bind recording and download actions
+$("start").onclick = startCapture;
+$("stop").onclick = stopCapture;
+$("dlJson").onclick = () => {
+  download(new Blob([toJSON(buildPayload())], { type: "application/json" }), `cam-i-hear-it-${Date.now()}.json`);
+};
+$("dlWav").onclick = () => {
+  download(encodeWav(samples(), state.sampleRate), `cam-i-hear-it-${Date.now()}.wav`);
+};
+$("post").onclick = postPayload;
+
+// Bind inputs for live payload updates
+const formIds = [
+  "postUrl",
+  "postEnable",
+  "make",
+  "model",
+  "year",
+  "engine",
+  "cylinders",
+  "mods",
+  "distanceBand",
+  "heightBand",
+  "hood",
+  "phoneOrientation",
+  "engineTemp",
+  "positionNotes",
+];
+
+formIds.forEach((id) => {
+  const el = $(id);
+  if (el) {
+    el.addEventListener("input", refreshPayload);
+    el.addEventListener("change", refreshPayload);
+  }
+});
+
+// Prefill backend submission URL from query parameter if present
+const urlParam = new URLSearchParams(window.location.search).get("post");
+if (urlParam) {
+  $("postUrl").value = urlParam;
+}
+
+refreshPayload();
