@@ -21,7 +21,7 @@ npm run web      # build + copy dist/src/*.js into ../web/lib/
 | engine.ts | `rpmFromFiring(f, N)`, `firingFromRpm`, `orderHz`, `scoreCylinderHypotheses`, `refineFiring` |
 | lope.ts | `detectPulses`, `lopeScore` → intervalCov / cycleCov / ampCov / score 0–100 |
 | bands.ts | `bandEnergies`, `orderEnergies`, `spectralCentroid`, `spectralFlatness`, `DEFAULT_BANDS` |
-| features.ts | `analyzeClip(samples, sampleRate, {cylinders?})` → `FeatureVector`, `featuresToJSON`, `FEATURE_SCHEMA` |
+| features.ts | `analyzeClip(samples, sampleRate, {cylinders?})` → `FeatureVector` (lope is measured on the longest dropout-free stretch; interior zero-runs ≥ 2 ms are reported in `dropouts` and `warnings`), `findDropouts`, `featuresToJSON`, `FEATURE_SCHEMA` |
 
 ```js
 import { analyzeClip, featuresToJSON } from "./lib/index.js";

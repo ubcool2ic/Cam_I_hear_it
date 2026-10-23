@@ -134,3 +134,17 @@ test("lope and pulse RPM agree between 44.1 kHz and 48 kHz input (browser-vs-off
   assert.ok(b.lope.intervalCov < 0.003, `interval CV at 44.1k ${b.lope.intervalCov}`);
   assert.ok(!b.warnings.some((w) => w.includes("pulse-timing")), b.warnings.join("|"));
 });
+
+test("a 10 ms audio dropout is flagged and does not inflate lope", () => {
+  // Headless Chrome dropped 441 samples (10 ms at 44.1 kHz) mid-clip in one smoke run; lope jumped from 13.6 to 30.7.
+  const opts = { durationS: 10, rpm: 750, cylinders: 8, ampPattern: [1, 0.8, 1.1, 0.9, 1.05, 0.85, 1, 0.95], ampJitter: 0.05, noise: 0.02, seed: 5, sampleRate: 44100 };
+  const clean = synthEngine(opts);
+  const gapped = Float32Array.from(clean);
+  gapped.fill(0, 165816, 165816 + 441);
+  const a = analyzeClip(clean, 44100), b = analyzeClip(gapped, 44100);
+  assert.equal(a.dropouts.length, 0);
+  assert.equal(b.dropouts.length, 1);
+  assert.ok(b.warnings.some((w) => w.includes("dropout")), b.warnings.join("|"));
+  assert.ok(Math.abs(a.lope.score - b.lope.score) < 4, `clean ${a.lope.score} vs gapped ${b.lope.score}`);
+  assert.ok(!b.warnings.some((w) => w.includes("pulse-timing")), b.warnings.join("|"));
+});

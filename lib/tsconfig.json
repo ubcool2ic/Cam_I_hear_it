@@ -1,3 +1,4 @@
+// File: lib/tsconfig.json | TypeScript build config for the DSP library (tsc accepts comments in tsconfig)
 {
   "compilerOptions": {
     "target": "ES2020",
