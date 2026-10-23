@@ -2,7 +2,7 @@
  * @file features.ts
  * @summary One-call clip analysis producing a JSON-serialisable feature vector for the ML backend.
  *
- * Schema id: "cam-i-hear-it/features@1" (see docs/ML_BACKEND.md). Bump the version on breaking changes.
+ * Schema id: "cam-i-hear-it/features@1" (backend design is parked on branch parked/early-code). Bump the version on breaking changes.
  */
 import { decimate } from "./window.js";
 import { welch } from "./spectrum.js";
