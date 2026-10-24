@@ -42,7 +42,7 @@ Contents
   - Citing Heywood, it says COV of IMEP above **10%** means unstable running and jitter, and possibly misfire.
   - It summarises Hinze & Cheng's idle study, where **air, residual and fuel variations contributed 5.5%, 4.4% and 0.64%** of IMEP variation, with residuals about one third.
 - Sztenderowicz & Heywood (SAE 1990, "Cycle-to-Cycle IMEP Fluctuations in a Stoichiometrically-Fueled S.I. Engine at Low Speed and Load", https://www.lanfanshu.com/paper/61e50ba81561fc1002f627e5) attribute low-load IMEP fluctuations mainly to cycle-to-cycle variation in the amount of fuel burned.
-- **Consequence:** "lope" is what CCV at idle sounds like. Weaker cycles mean the crank slows briefly (timing jitter), and their exhaust pulses are weaker (amplitude variation). A microphone can't measure IMEP. It can measure the **cycle-to-cycle CV of pulse timing and amplitude**, which is a sound-domain stand-in for COV of IMEP. The lib's lope score is built this way. Mapping it to cam specs needs labelled data, and the score will also respond to compression ratio, tune and vacuum leaks, not only the cam.
+- **Consequence:** "lope" is what CCV at idle sounds like. Weaker cycles mean the crank slows briefly (timing jitter), and their exhaust pulses are weaker (amplitude variation). A microphone can't measure IMEP. It can measure the **cycle-to-cycle CV of pulse timing and amplitude**, which is a sound-domain stand-in for COV of IMEP. The lib's lope score is built this way. Mapping it to cam specs needs labelled data (plan: [RESEARCH_CAM_SPEC_ML.md](RESEARCH_CAM_SPEC_ML.md)), and the score will also respond to compression ratio, tune and vacuum leaks, not only the cam.
 
 ## 4. Exhaust and muffler transfer effects, and how to compensate
 
@@ -279,6 +279,8 @@ All thresholds here are **assumptions to tune** on labelled data. No new externa
 - de Cheveigné & Kawahara, "YIN, a fundamental frequency estimator for speech and music", JASA 111(4), 2002, https://doi.org/10.1121/1.1458024 . Its autocorrelation and difference ideas back our autocorrelation estimator.
 
 ## 13. What this means for Cam_I_hear_it
+
+> **Follow-up:** estimating actual cam specs (duration, LSA, ICL, lift) from sound with ML, including crank-angle and cyclostationary features beyond human hearing, is researched in [RESEARCH_CAM_SPEC_ML.md](RESEARCH_CAM_SPEC_ML.md).
 
 1. **Estimate RPM from timing and harmonics, not from the fundamental's level.** iPhone mics are about −3 dB at 50 Hz and worse below (§7), right where V8 idle firing sits. Use HPS, cepstrum and autocorrelation across harmonics, plus the pulse-envelope timing.
 2. **Treat cylinder count as a hypothesis.** f_fire alone is ambiguous (§1). Score (N, RPM) pairs using firing harmonics, **half-order (cycle-rate) evidence** and an idle-RPM prior, and let the user's form input override.

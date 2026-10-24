@@ -5,6 +5,7 @@
 | What | Where |
 |---|---|
 | Acoustics research (cited): firing math, lope, knock, phone limits, distance/position, exterior position + noise environment scheme | [docs/RESEARCH_ACOUSTICS.md](RESEARCH_ACOUSTICS.md) |
+| Cam-spec-from-sound ML research (cited): physics per spec, identifiability ranking, crank-angle/cyclostationary signals, ML design, data plan, phases A–D | [docs/RESEARCH_CAM_SPEC_ML.md](RESEARCH_CAM_SPEC_ML.md) |
 | DSP library (TypeScript): RPM, cylinder hypotheses, lope, features | [lib/](../lib/README.md) |
 | Capture website (static, iPhone-first). Run locally with `npx serve web` | [web/](../web/README.md) |
 | OpenRouter spend log for model-assisted coding | [docs/SPEND.md](SPEND.md) |
@@ -17,7 +18,7 @@
 | Cylinder count / layout | Medium-high | Harmonic pattern and pulse spacing. A cross-plane V8 has an uneven half-order "burble"; inline-4 and flat-plane are even. |
 | Idle stability / lope | High | Cycle-to-cycle variation of pulse timing and amplitude. A lope score maps well to "how big is the cam." |
 | Cam spec class | Medium (as a class) | Classify stock / mild / big from the lope score, with labeled clips. |
-| Exact cam specs (duration, LSA, lift) | Low | Overlap affects sound but many specs sound alike, and exhaust, tune, and idle target all change it. The best we can do is a rough range ("~230+ @.050, tight LSA") with a confidence score. |
+| Exact cam specs (duration, LSA, lift) | Low | Overlap affects sound but many specs sound alike, and exhaust, tune, and idle target all change it. The best we can do is a rough range ("~230+ @.050, tight LSA") with a confidence score. ML plan: [RESEARCH_CAM_SPEC_ML.md](RESEARCH_CAM_SPEC_ML.md). |
 | Engine family | Medium-low | ML on labeled clips. Exhaust and mufflers mask a lot. |
 | Rod knock / lifter tick / exhaust leak | Medium | Event detection at 0.5x or 1x cam order, with a hood-open mic near the source. Many diagnostic apps already prove this works. |
 | Spark knock / ping | Low at idle | Detonation mostly happens under load. Use a revving or load test and contact sensing; at idle, label it "not testable." |
