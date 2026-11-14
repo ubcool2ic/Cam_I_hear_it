@@ -9,6 +9,10 @@
  */
 export function makeWindow(n, type = "hann") {
     const w = new Float64Array(n);
+    if (n === 1) {
+        w[0] = 1;
+        return w;
+    }
     for (let i = 0; i < n; i++) {
         const p = n > 1 ? i / (n - 1) : 0;
         w[i] = type === "hann" ? 0.5 - 0.5 * Math.cos(2 * Math.PI * p)
@@ -25,6 +29,8 @@ export function makeWindow(n, type = "hann") {
  * @returns Array of frames; trailing partial frame is dropped.
  */
 export function frameSignal(x, frameLen, hop, window) {
+    if (!(hop >= 1))
+        throw new RangeError("frameSignal: hop must be >= 1");
     const frames = [];
     for (let start = 0; start + frameLen <= x.length; start += hop) {
         const f = new Float64Array(frameLen);

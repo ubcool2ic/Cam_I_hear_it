@@ -23,7 +23,9 @@ export function hpsF0(spec, fMin, fMax, harmonics = 5) {
         return { f0: NaN, strength: 0 };
     const hps = new Float64Array(k1 + 2);
     let best = k0, sum = 0, cnt = 0;
-    for (let k = Math.max(1, k0 - 1); k <= k1 + 1 && k * harmonics < n; k++) {
+    const kLo = Math.max(1, k0 - 1);
+    let kHi = kLo - 1; // last bin actually computed
+    for (let k = kLo; k <= k1 + 1 && k * harmonics < n; k++) {
         let s = 0;
         for (let h = 1; h <= harmonics; h++) {
             // max over the +/-h/2 neighbourhood so fractional harmonics are not missed
@@ -36,6 +38,7 @@ export function hpsF0(spec, fMin, fMax, harmonics = 5) {
             s += Math.log(m + 1e-30);
         }
         hps[k] = s;
+        kHi = k;
     }
     for (let k = k0; k <= k1; k++) {
         if (hps[k] > hps[best])
@@ -44,8 +47,16 @@ export function hpsF0(spec, fMin, fMax, harmonics = 5) {
         cnt++;
     }
     const mean = cnt ? sum / cnt : 0;
-    const expd = hps.map((v) => Math.exp((v - hps[best]) / harmonics));
-    const kf = parabolicPeak(expd, best);
+    // Interpolate only when both neighbours were really computed (uncomputed bins hold 0, not a log-sum).
+    let kf = best;
+    if (best - 1 >= kLo && best + 1 <= kHi) {
+        const tri = [
+            Math.exp((hps[best - 1] - hps[best]) / harmonics),
+            1,
+            Math.exp((hps[best + 1] - hps[best]) / harmonics),
+        ];
+        kf = best - 1 + parabolicPeak(tri, 1);
+    }
     return { f0: kf * spec.df, strength: Math.tanh((hps[best] - mean) / (harmonics * 4)) };
 }
 /**

@@ -107,10 +107,12 @@ export function scorePair(spec: Spectrum, N: number, rpm: number, o: Required<Om
  * @param opts See {@link HypothesisOptions}.
  */
 export function scoreCylinderHypotheses(spec: Spectrum, opts: HypothesisOptions = {}): CylinderHypothesis[] {
+  // Non-finite or non-positive values fall back to defaults (rpmStep <= 0 would never terminate).
+  const pos = (v: number | undefined, d: number): number => (v !== undefined && Number.isFinite(v) && v > 0 ? v : d);
   const o = {
-    rpmMin: opts.rpmMin ?? 400,
-    rpmMax: opts.rpmMax ?? 1600,
-    rpmStep: opts.rpmStep ?? 2,
+    rpmMin: pos(opts.rpmMin, 400),
+    rpmMax: pos(opts.rpmMax, 1600),
+    rpmStep: pos(opts.rpmStep, 2),
     fMaxHz: opts.fMaxHz ?? Math.min(500, spec.sampleRate * 0.45),
     priorRpm: opts.priorRpm ?? 750,
     priorLogSd: opts.priorLogSd ?? 0.35,

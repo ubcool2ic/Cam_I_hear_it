@@ -4,7 +4,7 @@
  *
  * The {@link Spectrum} object is the common currency between pitch, engine and band modules.
  */
-import { powerSpectrum, nextPow2 } from "./fft.js";
+import { powerSpectrum, nextPow2, fftInPlace } from "./fft.js";
 import { makeWindow, removeDC } from "./window.js";
 /**
  * Welch-averaged power spectrum (Hann window, 50% overlap).
@@ -15,20 +15,27 @@ import { makeWindow, removeDC } from "./window.js";
 export function welch(x, sampleRate, segLen) {
     const xs = removeDC(x);
     let L = segLen ?? Math.min(65536, nextPow2(xs.length + 1) >> 1);
+    if (!(L >= 1))
+        L = Math.min(65536, nextPow2(xs.length + 1) >> 1);
+    L = Math.floor(L);
     if (L > xs.length)
         L = nextPow2(xs.length);
     const nfft = nextPow2(L);
     const w = makeWindow(Math.min(L, xs.length), "hann");
     const hop = Math.max(1, Math.floor(L / 2));
-    const acc = new Float64Array(nfft / 2 + 1);
+    const acc = new Float64Array((nfft >> 1) + 1);
     let count = 0;
-    const seg = new Float64Array(w.length);
+    // FFT work buffers are reused across segments (no per-segment allocations).
+    const re = new Float64Array(nfft);
+    const im = new Float64Array(nfft);
     for (let start = 0; start + w.length <= xs.length; start += hop) {
         for (let i = 0; i < w.length; i++)
-            seg[i] = xs[start + i] * w[i];
-        const p = powerSpectrum(seg, nfft);
+            re[i] = xs[start + i] * w[i];
+        re.fill(0, w.length);
+        im.fill(0);
+        fftInPlace(re, im);
         for (let k = 0; k < acc.length; k++)
-            acc[k] += p[k];
+            acc[k] += re[k] * re[k] + im[k] * im[k];
         count++;
     }
     if (count === 0) {
