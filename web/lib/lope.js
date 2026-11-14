@@ -64,7 +64,12 @@ export function lopeScore(pulses, cycleHz, eventsPerCycle) {
     if (pulses.length < 8 || !(cycleHz > 0))
         return nan;
     const dur = pulses[pulses.length - 1].t - pulses[0].t;
-    const E = eventsPerCycle ?? Math.max(1, Math.round((pulses.length - 1) / (dur * cycleHz)));
+    // Only a finite value >= 1 is usable for slotting; 0 / NaN / fractions would loop forever or index out of range.
+    const given = eventsPerCycle !== undefined && Number.isFinite(eventsPerCycle) && eventsPerCycle >= 1
+        ? Math.round(eventsPerCycle) : undefined;
+    const E = given ?? Math.max(1, Math.round((pulses.length - 1) / (dur * cycleHz)));
+    if (!Number.isFinite(E))
+        return nan;
     const cycles = Math.floor((pulses.length - 1) / E);
     if (cycles < 3)
         return { ...nan, eventsPerCycle: E };

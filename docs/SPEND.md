@@ -41,3 +41,15 @@ No OpenRouter calls. Everything was written by hand. The key's account-wide usag
 | | | | **Round total** | | | **0.065712** | **6.6% of the $1.00 cap** |
 
 Cumulative for this repo: 0.148175 + 0.065712 = **$0.213887**.
+
+## Fable 5.2 review round (2026-11-14, Grok Bot Updater)
+
+Model: anthropic/claude-fable-5.2 via OpenRouter, reasoning effort low. Cap for this repo: $6.00 (part of a $36 cap across 6+ repos set by the bot for Tyler's request). Costs are from each response's usage.cost field.
+
+| Date (ET, UTC-5) | Model | Purpose | Generation id | Tokens (in/out, reasoning) | Finish | Cost (USD) |
+|---|---|---|---|---|---|---|
+| 2026-11-14 05:33 | anthropic/claude-fable-5.2 | dsp-review+edits | gen-1794652233-Oc9HUUyKliB1zw83aG1N | 20660 / 20578 (13356) | stop | 0.988400 |
+
+**Round total: $0.988400**
+
+An earlier call for this repo was interrupted after about 17 s with no response; it may or may not have been billed, so it is not in the table.

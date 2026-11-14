@@ -13,6 +13,7 @@ export type WindowType = "hann" | "hamming" | "rect";
  */
 export function makeWindow(n: number, type: WindowType = "hann"): Float64Array {
   const w = new Float64Array(n);
+  if (n === 1) { w[0] = 1; return w; }
   for (let i = 0; i < n; i++) {
     const p = n > 1 ? i / (n - 1) : 0;
     w[i] = type === "hann" ? 0.5 - 0.5 * Math.cos(2 * Math.PI * p)
@@ -30,6 +31,7 @@ export function makeWindow(n: number, type: WindowType = "hann"): Float64Array {
  * @returns Array of frames; trailing partial frame is dropped.
  */
 export function frameSignal(x: ArrayLike<number>, frameLen: number, hop: number, window?: Float64Array): Float64Array[] {
+  if (!(hop >= 1)) throw new RangeError("frameSignal: hop must be >= 1");
   const frames: Float64Array[] = [];
   for (let start = 0; start + frameLen <= x.length; start += hop) {
     const f = new Float64Array(frameLen);

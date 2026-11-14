@@ -90,6 +90,15 @@ export interface FeatureVector {
  */
 export function analyzeClip(samples: ArrayLike<number>, sampleRate: number, opts: AnalyzeOptions = {}): FeatureVector {
   const warnings: string[] = [];
+  // A single NaN/Infinity sample would poison every spectrum (via the mean), so zero such samples first.
+  let bad = 0;
+  for (let i = 0; i < samples.length; i++) if (!Number.isFinite(samples[i])) bad++;
+  if (bad) {
+    const clean = new Float64Array(samples.length);
+    for (let i = 0; i < samples.length; i++) { const v = samples[i]; clean[i] = Number.isFinite(v) ? v : 0; }
+    samples = clean;
+    warnings.push(`${bad} non-finite sample${bad > 1 ? "s" : ""} replaced with 0`);
+  }
   const durationS = samples.length / sampleRate;
   if (durationS < 4) warnings.push("clip shorter than 4 s: RPM/lope unreliable");
   const factor = Math.max(1, Math.floor(sampleRate / (opts.analysisRate ?? 2000)));
@@ -127,7 +136,7 @@ export function analyzeClip(samples: ArrayLike<number>, sampleRate: number, opts
     autocorr: autocorrF0(specLow.subarray(0, Math.min(specLow.length, Math.round(ar * 2))), ar, 15, fMaxF0),
   };
   const pulses = detectPulses(lowClean, ar, best.firingHz);
-  const lopeRaw = lopeScore(pulses, best.rpm / 120, opts.eventsPerCycle ?? opts.cylinders ?? best.cylinders);
+  const lopeRaw = lopeScore(pulses, best.rpm / 120, opts.eventsPerCycle || opts.cylinders || best.cylinders);
   const lope: LopeResult = drops.length && cleanS < 3
     ? { ...lopeRaw, score: NaN, intervalCov: NaN, cycleCov: NaN, ampCov: NaN, rpmFromPulses: NaN }
     : lopeRaw;
